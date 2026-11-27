@@ -62,9 +62,19 @@ export const KNOWN_BOTS: BotProfile[] = [
 ];
 
 const BY_ID = new Map(KNOWN_BOTS.map((bot) => [bot.id, bot]));
+
+export function normalizeBotInput(input: string): string {
+  let value = input.trim().toLowerCase().replace(/\./g, "");
+  value = value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  while (value.startsWith("visitor ")) value = value.slice("visitor ".length).trim();
+  return value;
+}
+
 const BY_ALIAS = new Map<string, BotProfile>();
 for (const bot of KNOWN_BOTS) {
-  for (const alias of bot.aliases) BY_ALIAS.set(alias, bot);
+  for (const alias of [bot.id, bot.name, ...bot.aliases]) {
+    BY_ALIAS.set(normalizeBotInput(alias), bot);
+  }
 }
 
 export type ResolvedBot = {
@@ -74,10 +84,6 @@ export type ResolvedBot = {
   known: boolean;
   variant: Variant;
 };
-
-export function normalizeBotInput(input: string): string {
-  return input.trim().toLowerCase().replace(/\./g, "").replace(/\s+/g, " ");
-}
 
 function prettyUnknown(input: string): string {
   const trimmed = input.trim().replace(/\s+/g, " ");
@@ -108,6 +114,14 @@ export function resolveBot(input: string): ResolvedBot {
     known: false,
     variant: "generic",
   };
+}
+
+const EVERYONE_NAMES = new Set(["everyone", "big brain", "all", "crew", "the crew"]);
+
+export function canonicalBotId(input: string): string {
+  const norm = normalizeBotInput(input);
+  if (EVERYONE_NAMES.has(norm)) return "everyone";
+  return resolveBot(input).id;
 }
 
 export function profileFor(id: string): BotProfile | undefined {

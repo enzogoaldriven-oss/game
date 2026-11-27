@@ -5,16 +5,16 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { ActivityFeed } from "@/components/activity-feed";
 import { BrainPanel } from "@/components/brain-panel";
 import { ChatDrawer, type ChatTarget } from "@/components/chat-drawer";
-import { GradeDashboard } from "@/components/grade-dashboard";
 import { OfficeScene } from "@/components/office-scene";
+import { WhiteboardZoom } from "@/components/whiteboard-zoom";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { DEMO_SCRIPT, profileFor, resolveBot } from "@/lib/bots";
+import { canonicalBotId, DEMO_SCRIPT, profileFor, resolveBot } from "@/lib/bots";
+import { CLASSES } from "@/lib/classes";
 import { EVERYONE_ID, type ChatMessage, type ClientEvent, type CrewEvent, type GradeTodo, type TodoStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type LinkState = "connecting" | "live" | "reconnecting";
-type MobilePanel = "closed" | "grades" | "activity";
 type ReplyBubble = { text: string; nonce: number };
 
 class LoginRequired extends Error {}
@@ -79,7 +79,8 @@ export function CrewHQ() {
   const [brainOpen, setBrainOpen] = useState(false);
   const [statuses, setStatuses] = useState<Record<string, string>>({});
   const [justFiledId, setJustFiledId] = useState<string | null>(null);
-  const [panel, setPanel] = useState<MobilePanel>("closed");
+  const [logOpen, setLogOpen] = useState(false);
+  const [boardId, setBoardId] = useState<string | null>(null);
   const [busyTodo, setBusyTodo] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [replyBubbles, setReplyBubbles] = useState<Record<string, ReplyBubble | undefined>>({});
@@ -184,14 +185,15 @@ export function CrewHQ() {
           const chat = JSON.parse((message as MessageEvent).data) as ChatMessage;
           setMessages((current) => upsertMessage(current, chat));
           if (chat.from === "enzo") return;
+          const botId = canonicalBotId(chat.from);
           const nonce = Date.now();
-          setReplyBubbles((current) => ({ ...current, [chat.from]: { text: clip(chat.text), nonce } }));
+          setReplyBubbles((current) => ({ ...current, [botId]: { text: clip(chat.text), nonce } }));
           window.setTimeout(() => {
             if (!alive.current) return;
             setReplyBubbles((current) => {
-              if (current[chat.from]?.nonce !== nonce) return current;
+              if (current[botId]?.nonce !== nonce) return current;
               const next = { ...current };
-              delete next[chat.from];
+              delete next[botId];
               return next;
             });
           }, 7000);
@@ -277,9 +279,11 @@ export function CrewHQ() {
   }, [chatTarget, events, statuses]);
 
   const thread = useMemo(
-    () => (chat ? messages.filter((message) => message.to === chat.id) : []),
+    () => (chat ? messages.filter((message) => canonicalBotId(message.to) === chat.id) : []),
     [chat, messages],
   );
+  const openCount = todos.filter((todo) => todo.status === "todo").length;
+  const boardSubject = CLASSES.find((item) => item.id === boardId) ?? null;
 
   function toggleDemo(next: boolean) {
     writeDemo(next);
@@ -349,6 +353,9 @@ export function CrewHQ() {
           <p className="mt-1 truncate text-xs text-white/65 sm:text-sm">Enzo&apos;s helpers, on the floor</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
+          <span className="rounded-full border border-white/10 px-2 py-1 text-xs font-extrabold text-amber-100" title="Open assignments">
+            {openCount} open
+          </span>
           <span
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-1 text-xs font-extrabold",
@@ -388,68 +395,40 @@ export function CrewHQ() {
             onOpenBrain={() => {
               setBrainOpen(true);
               setChatTarget(null);
+              setBoardId(null);
+            }}
+            onOpenWhiteboard={(classId) => {
+              setBoardId(classId);
+              setChatTarget(null);
+              setBrainOpen(false);
             }}
             onFiled={onFiled}
             onStatuses={setStatuses}
             notes={notes}
             replyBubbles={replyBubbles}
+            todos={todos}
           />
         </main>
         <aside
           className={cn(
-            "flex min-h-0 shrink-0 flex-col border-white/10 bg-[#101226]/95 backdrop-blur-md lg:h-full lg:w-[400px] lg:border-t-0 lg:border-l",
-            panel === "closed" ? "h-16 border-t" : "h-[min(72dvh,560px)] border-t",
+            "flex min-h-0 shrink-0 flex-col border-white/10 bg-[#101226]/95 backdrop-blur-md lg:h-full lg:w-[380px] lg:border-t-0 lg:border-l",
+            logOpen ? "h-[280px] border-t" : "h-[76px] border-t",
           )}
         >
-          <div className="flex shrink-0 items-center gap-2 px-3 py-2 lg:hidden">
-            <Button
-              type="button"
-              size="sm"
-              variant={panel === "grades" ? "default" : "outline"}
-              aria-expanded={panel === "grades"}
-              onClick={() => setPanel((current) => (current === "grades" ? "closed" : "grades"))}
-            >
-              Grades
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={panel === "activity" ? "default" : "outline"}
-              aria-expanded={panel === "activity"}
-              onClick={() => setPanel((current) => (current === "activity" ? "closed" : "activity"))}
-            >
-              Activity
-            </Button>
-          </div>
-          <div className={cn("min-h-0 flex-1 flex-col", panel === "grades" ? "flex" : "hidden", "lg:flex")}>
-            <GradeDashboard
-              todos={todos}
-              loading={loading}
-              error={todoError}
-              busyId={busyTodo}
-              onToggle={(todo, status) => void toggleTodo(todo, status)}
-              onRetry={() => {
-                setLoading(true);
-                void reload();
-              }}
-            />
-          </div>
-          <div className={cn("min-h-0 flex-1 flex-col lg:h-[46%] lg:flex-none", panel === "activity" ? "flex" : "hidden", "lg:flex")}>
-            <ActivityFeed
-              events={events}
-              loading={loading}
-              error={error}
-              demo={demo}
-              justFiledId={justFiledId}
-              open
-              onToggle={() => setPanel("closed")}
-              onRetry={() => {
-                setLoading(true);
-                void reload();
-              }}
-              onSelect={openChat}
-            />
-          </div>
+          <ActivityFeed
+            events={events}
+            loading={loading}
+            error={error}
+            demo={demo}
+            justFiledId={justFiledId}
+            open={logOpen}
+            onToggle={() => setLogOpen((value) => !value)}
+            onRetry={() => {
+              setLoading(true);
+              void reload();
+            }}
+            onSelect={openChat}
+          />
         </aside>
       </div>
       <ChatDrawer
@@ -461,6 +440,18 @@ export function CrewHQ() {
           if (!open) setChatTarget(null);
         }}
         onSend={(text) => void sendChat(text)}
+      />
+      <WhiteboardZoom
+        subject={boardSubject}
+        todos={todos}
+        busyId={busyTodo}
+        error={todoError}
+        onClose={() => setBoardId(null)}
+        onToggle={(todo, status) => void toggleTodo(todo, status)}
+        onRetry={() => {
+          setLoading(true);
+          void reload();
+        }}
       />
       <BrainPanel
         open={brainOpen}

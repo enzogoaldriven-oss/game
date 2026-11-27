@@ -116,11 +116,11 @@ curl -b /tmp/crew-cookies http://localhost:3847/api/events
 | Mr Prendagas | History & Government | Navy suit, red tie, gavel, Constitution scroll |
 | Coach Bates | P.E. | Green tracksuit, whistle, stopwatch, dumbbell |
 
-Click a character to open a chat with that bot. Click the Big Brain (or the Big Brain chip) for every filed note, grouped by bot, plus the open grade items. **Message the crew** in that panel is the everyone thread. On a phone, drag the floor and use the name chips to find someone. Grades sit on the right on a wide screen, and behind the Grades button on a phone.
+Click a character to open a chat with that bot. Click the Big Brain (or the Big Brain chip) for every filed note, grouped by bot, plus the open grade items. **Message the crew** in that panel is the everyone thread. On a phone, drag the floor and use the name chips to find someone. Each classroom has a whiteboard on the back wall. Click it to tick items. A small open count sits in the header. Activity stays in the side column.
 
 ## Grades
 
-The side panel is **How to raise my grades**. It groups real items only. Nothing is seeded.
+Each classroom whiteboard shows that class's open items in marker writing, plus an open count. Click the board for a larger view and tick items there with the viewer cookie. Nothing is seeded. The header shows one small total. Bot names in chat accept spaces, hyphens, or a `visitor-` prefix, so `ms-boone` and `ms boone` are the same person. More than one bot can reply to an everyone message.
 
 Classes: `Psychology` (Ms Boone), `Ethnic Studies` (Ms Bhon), `Gov/History` (Mr Prendagas), `PE` (Coach Bates).
 
@@ -191,7 +191,7 @@ curl -X POST http://localhost:3847/api/chat/reply \
   -d '{"bot":"ms boone","text":"Redo the exit ticket.","replyTo":"MESSAGE_ID"}'
 ```
 
-`pending` for a named bot returns unanswered viewer messages to that bot and to everyone. `bot=everyone` (or `big brain`) returns only the shared thread. A reply marks the original `answered: true` and stores the bot's message on the same thread. A second reply to the same message is `409`.
+`pending` for a named bot returns unanswered viewer messages to that bot and to everyone. Names are matched ignoring case, spaces, hyphens, and a leading `visitor-`, so `ms boone`, `ms-boone`, and `visitor-ms-boone` are Ms Boone. `bot=everyone` (or `big brain`) returns only the shared thread. The first reply marks the original `answered: true`. A second reply to a direct message is `409`. Another bot can still reply to an everyone message after that.
 
 `text` is 1–500 characters. `GET /api/chat` (cookie or secret) returns the saved messages.
 

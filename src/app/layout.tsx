@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Fredoka, Nunito } from "next/font/google";
+import { Caveat, Fredoka, Nunito } from "next/font/google";
 import type { ReactNode } from "react";
 import "./globals.css";
 
@@ -12,6 +12,12 @@ const fredoka = Fredoka({
 const nunito = Nunito({
   subsets: ["latin"],
   variable: "--font-nunito",
+  display: "swap",
+});
+
+const caveat = Caveat({
+  subsets: ["latin"],
+  variable: "--font-caveat",
   display: "swap",
 });
 
@@ -29,7 +35,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${fredoka.variable} ${nunito.variable} h-full`}>
+    <html lang="en" className={`${fredoka.variable} ${nunito.variable} ${caveat.variable} h-full`}>
       <body className="h-full font-sans antialiased">{children}</body>
     </html>
   );

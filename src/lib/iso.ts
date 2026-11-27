@@ -263,6 +263,22 @@ export function homeForVisitor(index: number): Home {
   };
 }
 
+export type WhiteboardSpec = {
+  classId: string;
+  axis: "x" | "y";
+  x: number;
+  y: number;
+  w: number;
+};
+
+/** Back wall of each classroom. `x` runs along +x; `y` runs along +y. */
+export const WHITEBOARDS: WhiteboardSpec[] = [
+  { classId: "psychology", axis: "x", x: 6.55, y: 0.02, w: 3.15 },
+  { classId: "ethnic-studies", axis: "x", x: 1.2, y: 5.02, w: 2.7 },
+  { classId: "gov-history", axis: "y", x: 15.98, y: 6.05, w: 2.55 },
+  { classId: "pe", axis: "x", x: 6.7, y: 15.98, w: 3.05 },
+];
+
 export const ROOM_SIGNS: Array<{ title: string; who: string; at: Point; tone: string }> = [
   { title: "Psychology", who: "Ms Boone", at: { x: 5.35, y: 0.05 }, tone: "#6d28d9" },
   { title: "Ethnic Studies", who: "Ms Bhon", at: { x: 0.05, y: 5.35 }, tone: "#c2410c" },

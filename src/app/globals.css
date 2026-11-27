@@ -3,6 +3,7 @@
 @theme inline {
   --font-sans: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-fredoka), ui-rounded, system-ui, sans-serif;
+  --font-marker: var(--font-caveat), "Segoe Print", cursive;
 }
 
 * {
@@ -202,6 +203,166 @@ input {
     0 0 0 3px color-mix(in srgb, currentColor 55%, transparent),
     0 0 14px 3px currentColor;
 }
+
+.room-board {
+  position: absolute;
+  z-index: 45;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transform-origin: top left;
+}
+
+.room-board:focus-visible {
+  outline: 3px solid #67e8f9;
+  outline-offset: 4px;
+}
+
+.room-board-face {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border: 2px solid #64748b;
+  border-bottom-width: 5px;
+  border-radius: 2px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), transparent 32%),
+    repeating-linear-gradient(180deg, transparent, transparent 22px, rgba(148, 163, 184, 0.28) 23px),
+    #f8fafc;
+  padding: 3px 5px 2px;
+  text-align: left;
+  box-shadow:
+    0 7px 0 rgba(15, 23, 42, 0.16),
+    0 12px 16px rgba(0, 0, 0, 0.28);
+}
+
+.room-board-head,
+.room-board-teacher,
+.room-board-item,
+.room-board-empty,
+.room-board-more {
+  font-family: var(--font-marker), cursive;
+  font-weight: 700;
+  line-height: 1.05;
+}
+
+.room-board-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.room-board-count {
+  display: grid;
+  min-width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 999px;
+  background: #ef4444;
+  color: white;
+  font-family: var(--font-nunito), sans-serif;
+  font-size: 10px;
+}
+
+.room-board-teacher {
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.room-board-list {
+  display: grid;
+  gap: 1px;
+  margin-top: 1px;
+}
+
+.room-board-item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+}
+
+.room-board-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-board-item i {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border: 2px solid currentColor;
+  border-radius: 2px;
+}
+
+.room-board-empty,
+.room-board-more {
+  margin-top: 1px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.room-board[data-ink="psychology"] { color: #5b21b6; }
+.room-board[data-ink="ethnic-studies"] { color: #c2410c; }
+.room-board[data-ink="gov-history"] { color: #1d4ed8; }
+.room-board[data-ink="pe"] { color: #166534; }
+
+.whiteboard-frame {
+  border-radius: 18px;
+  background: linear-gradient(180deg, #e2e8f0, #94a3b8);
+  padding: 14px 14px 10px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+}
+
+.whiteboard-surface {
+  min-height: 280px;
+  max-height: min(62dvh, 560px);
+  overflow-y: auto;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55), transparent 18%),
+    repeating-linear-gradient(180deg, transparent, transparent 42px, rgba(148, 163, 184, 0.35) 43px),
+    #f8fafc;
+  padding: 22px 22px 28px;
+  box-shadow: inset 0 0 0 8px #f8fafc, inset 0 0 0 10px #cbd5e1;
+}
+
+.whiteboard-check {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  accent-color: #0f172a;
+}
+
+.whiteboard-tray {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.whiteboard-tray span {
+  width: 46px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.whiteboard-tray span:nth-child(1) { background: #111827; }
+.whiteboard-tray span:nth-child(2) { background: #1d4ed8; }
+.whiteboard-tray span:nth-child(3) { background: #dc2626; }
+.whiteboard-tray span:nth-child(4) { background: #16a34a; }
+
+.whiteboard-frame[data-ink="psychology"] .whiteboard-surface { color: #5b21b6; }
+.whiteboard-frame[data-ink="ethnic-studies"] .whiteboard-surface { color: #c2410c; }
+.whiteboard-frame[data-ink="gov-history"] .whiteboard-surface { color: #1d4ed8; }
+.whiteboard-frame[data-ink="pe"] .whiteboard-surface { color: #166534; }
 
 .room-sign {
   position: absolute;

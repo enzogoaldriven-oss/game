@@ -1,7 +1,5 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { CLASSES } from "@/lib/classes";
 import type { GradeTodo, TodoPriority, TodoStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -76,97 +74,5 @@ export function TodoRow({
         </div>
       </div>
     </li>
-  );
-}
-
-export function GradeDashboard({
-  todos,
-  loading,
-  error,
-  busyId,
-  onToggle,
-  onRetry,
-}: {
-  todos: GradeTodo[];
-  loading: boolean;
-  error: string | null;
-  busyId: string | null;
-  onToggle: (todo: GradeTodo, status: TodoStatus) => void;
-  onRetry: () => void;
-}) {
-  const open = todos.filter((todo) => todo.status === "todo");
-  const next = [...open].filter((todo) => todo.due).sort((a, b) => (a.due ?? "").localeCompare(b.due ?? ""))[0];
-  const counts = CLASSES.map((subject) => ({
-    ...subject,
-    open: open.filter((todo) => todo.classId === subject.id).length,
-  }));
-
-  return (
-    <section className="flex h-full min-h-0 flex-col" aria-label="How to raise my grades">
-      <header className="border-b border-white/10 px-4 py-3">
-        <h2 className="font-display text-lg leading-none">How to raise my grades</h2>
-        <p className="mt-2 text-sm font-extrabold text-cyan-100" aria-live="polite">
-          {open.length} open
-          {next?.due ? ` · next due ${formatDue(next.due)}` : ""}
-        </p>
-        <ul className="mt-2 flex flex-wrap gap-1.5">
-          {counts.map((subject) => (
-            <li key={subject.id} className="rounded-full bg-white/8 px-2 py-1 text-[11px] font-extrabold text-white/75">
-              {subject.name} {subject.open}
-            </li>
-          ))}
-        </ul>
-        {next ? (
-          <p className="mt-2 text-xs text-white/65">
-            Next up: {next.title} · {next.className}
-            {next.due ? ` · ${formatDue(next.due)}` : ""}
-          </p>
-        ) : null}
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-        {loading ? (
-          <div className="space-y-2" aria-hidden>
-            {Array.from({ length: 3 }, (_, index) => (
-              <div key={index} className="skeleton h-16 rounded-2xl" />
-            ))}
-          </div>
-        ) : null}
-        {!loading && error ? (
-          <div className="rounded-2xl border border-rose-300/30 bg-rose-400/10 p-4 text-sm">
-            <p>{error}</p>
-            <Button type="button" className="mt-3" size="sm" onClick={onRetry}>
-              Try grades again
-            </Button>
-          </div>
-        ) : null}
-        {!loading && !error && todos.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-white/15 bg-white/5 p-4 text-sm text-white/75">
-            No assignments yet. The crew posts them with the bot secret. Nothing here is filled in for you.
-          </p>
-        ) : null}
-        {!loading && !error
-          ? CLASSES.map((subject) => {
-              const items = sortTodos(todos.filter((todo) => todo.classId === subject.id));
-              return (
-                <section key={subject.id} className="mb-4" aria-labelledby={`class-${subject.id}`}>
-                  <h3 id={`class-${subject.id}`} className="px-1 text-sm font-extrabold">
-                    {subject.name}
-                    <span className="ml-2 font-bold text-white/50">{subject.teacher}</span>
-                  </h3>
-                  {items.length === 0 ? (
-                    <p className="mt-1 px-1 text-xs text-white/45">Nothing in this class yet.</p>
-                  ) : (
-                    <ul className="mt-2 space-y-2">
-                      {items.map((todo) => (
-                        <TodoRow key={todo.id} todo={todo} busy={busyId === todo.id} onToggle={onToggle} />
-                      ))}
-                    </ul>
-                  )}
-                </section>
-              );
-            })
-          : null}
-      </div>
-    </section>
   );
 }

@@ -1,19 +1,21 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { accentFor, hueFor, profileFor, variantFor } from "@/lib/bots";
-import { TYPE_META } from "@/lib/bots";
+import { FloorWhiteboard } from "@/components/room-whiteboard";
+import { accentFor, hueFor, profileFor, TYPE_META, variantFor } from "@/lib/bots";
+import { CLASSES } from "@/lib/classes";
 import {
   BRAIN,
   buildScene,
   HOMES,
   project,
   ROOM_SIGNS,
+  WHITEBOARDS,
   WORLD_H,
   WORLD_W,
 } from "@/lib/iso";
 import { createSim, ingest, linkGeometry, stepSim, visualSignature, type NeuralLink, type Pose, type Sim } from "@/lib/sim";
-import type { ClientEvent, EventType } from "@/lib/types";
+import type { ClientEvent, EventType, GradeTodo } from "@/lib/types";
 import { BigBrain } from "@/components/big-brain";
 import { MinionSprite } from "@/components/minion-sprite";
 import { Button } from "@/components/ui/button";
@@ -64,19 +66,23 @@ export function OfficeScene({
   selectedId,
   onSelect,
   onOpenBrain,
+  onOpenWhiteboard,
   onFiled,
   onStatuses,
   notes,
   replyBubbles,
+  todos,
 }: {
   events: ClientEvent[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onOpenBrain: () => void;
+  onOpenWhiteboard: (classId: string) => void;
   onFiled: (id: string) => void;
   onStatuses: (statuses: Record<string, string>) => void;
   notes: number;
   replyBubbles: Record<string, ReplyBubble | undefined>;
+  todos: GradeTodo[];
 }) {
   const eventsRef = useRef(events);
   const onFiledRef = useRef(onFiled);
@@ -272,6 +278,25 @@ export function OfficeScene({
             <circle key={index} cx={dot.cx} cy={dot.cy} r={dot.r} fill={dot.fill} />
           ))}
         </svg>
+        {WHITEBOARDS.map((spec) => {
+          const subject = CLASSES.find((item) => item.id === spec.classId);
+          if (!subject) return null;
+          return (
+            <FloorWhiteboard
+              key={spec.classId}
+              spec={spec}
+              subject={subject}
+              todos={todos.filter((todo) => todo.classId === spec.classId)}
+              onOpen={() => {
+                onOpenWhiteboard(spec.classId);
+                if (zoomed) {
+                  const at = spec.axis === "x" ? { x: spec.x + spec.w / 2, y: spec.y } : { x: spec.x, y: spec.y + spec.w / 2 };
+                  panTo(at.x, at.y);
+                }
+              }}
+            />
+          );
+        })}
         {ROOM_SIGNS.map((sign) => {
           const point = project(sign.at.x, sign.at.y);
           return (

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { resolveBot } from "@/lib/bots";
+import { canonicalBotId, resolveBot } from "@/lib/bots";
 import { publish } from "@/lib/live";
 import { readJson, writeJson } from "@/lib/persist";
 import { EVERYONE_ID, type ChatMessage } from "@/lib/types";
@@ -8,8 +8,6 @@ import { EVERYONE_ID, type ChatMessage } from "@/lib/types";
 const FILE = path.join(process.cwd(), "data", "chat.json");
 const MAX_MESSAGES = 400;
 const KEY = "__crewHQChat";
-
-const EVERYONE_ALIASES = new Set(["everyone", "big brain", "big-brain", "all", "crew", "the crew"]);
 
 type Bucket = { messages: ChatMessage[] };
 
@@ -63,15 +61,24 @@ function cleanText(value: unknown): string | null {
 
 export function resolveChatTarget(input: string): ChatTarget | null {
   const trimmed = input.trim();
-  if (trimmed.length === 0 || trimmed.length > 48) return null;
-  const norm = trimmed.toLowerCase().replace(/\./g, "").replace(/\s+/g, " ");
-  if (EVERYONE_ALIASES.has(norm)) return { id: EVERYONE_ID, name: "Big Brain" };
+  if (trimmed.length === 0 || trimmed.length > 64) return null;
+  const id = canonicalBotId(trimmed);
+  if (id === EVERYONE_ID) return { id: EVERYONE_ID, name: "Big Brain" };
   const bot = resolveBot(trimmed);
   return { id: bot.id, name: bot.name };
 }
 
+function threadId(value: string): string {
+  return canonicalBotId(value);
+}
+
 export function listMessages(): ChatMessage[] {
-  return bucket().messages.slice();
+  return bucket().messages.map((message) => {
+    const to = threadId(message.to);
+    const from = message.from === "enzo" ? "enzo" : threadId(message.from);
+    if (to === message.to && from === message.from) return message;
+    return { ...message, to, from };
+  });
 }
 
 export function listPending(botQuery: string): { ok: true; messages: ChatMessage[] } | { ok: false; status: number; error: string } {
@@ -79,8 +86,9 @@ export function listPending(botQuery: string): { ok: true; messages: ChatMessage
   if (!target) return { ok: false, status: 400, error: "bot query is required." };
   const messages = bucket().messages.filter((message) => {
     if (message.answered || message.from !== "enzo") return false;
-    if (target.id === EVERYONE_ID) return message.to === EVERYONE_ID;
-    return message.to === target.id || message.to === EVERYONE_ID;
+    const to = threadId(message.to);
+    if (target.id === EVERYONE_ID) return to === EVERYONE_ID;
+    return to === target.id || to === EVERYONE_ID;
   });
   return { ok: true, messages };
 }
@@ -129,16 +137,24 @@ export function postReply(body: unknown): ChatResult {
   const original = current.messages.find((message) => message.id === record.replyTo);
   if (!original) return fail(404, "Message not found.");
   if (original.from !== "enzo") return fail(400, "replyTo must be a viewer message.");
-  if (original.answered) return fail(409, "That message was already answered.");
-  const addressed = original.to === target.id || original.to === EVERYONE_ID;
+  const to = threadId(original.to);
+  const crowd = to === EVERYONE_ID;
+  const addressed = to === target.id || crowd;
   if (!addressed) return fail(403, "That message is for a different bot.");
+  if (crowd) {
+    const alreadyReplied = current.messages.some((message) => message.replyTo === original.id && message.from === target.id);
+    if (alreadyReplied) return fail(409, "That bot already replied.");
+  } else if (original.answered) {
+    return fail(409, "That message was already answered.");
+  }
 
-  original.answered = true;
+  original.to = to;
+  if (!original.answered) original.answered = true;
   const reply: ChatMessage = {
     id: randomUUID(),
     from: target.id,
     fromName: target.name,
-    to: original.to,
+    to,
     text,
     timestamp: new Date().toISOString(),
     answered: true,

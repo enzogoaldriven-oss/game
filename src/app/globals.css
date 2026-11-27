@@ -174,6 +174,35 @@ input {
   pointer-events: none;
 }
 
+.brain-hit {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.brain-hit:focus-visible {
+  outline: 3px solid #67e8f9;
+  outline-offset: 8px;
+  border-radius: 999px;
+}
+
+.synapse-star {
+  position: absolute;
+  z-index: 1800;
+  border-radius: 999px;
+  background: white;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, currentColor 55%, transparent),
+    0 0 14px 3px currentColor;
+}
+
 .room-sign {
   position: absolute;
   z-index: 20;
@@ -533,7 +562,9 @@ input {
   .brain-glow,
   .star,
   .pulse-dot,
-  .brain-ring {
+  .brain-ring,
+  .is-pulsing .brain-sphere,
+  .sheet-content {
     animation: none !important;
   }
 }

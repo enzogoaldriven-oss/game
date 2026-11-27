@@ -4,7 +4,7 @@ import type { ClientEvent, EventType } from "@/lib/types";
 
 export type Pose = "idle" | "walk" | "type" | "jump" | "alert";
 
-type Arrive = "ambient" | "type" | "deposit" | "idle";
+type Arrive = "ambient" | "type" | "react" | "idle";
 
 export type SimBot = {
   id: string;
@@ -19,7 +19,7 @@ export type SimBot = {
   status: string;
   nonce: number;
   queue: ClientEvent[];
-  mode: "idle" | "walk" | "react" | "type" | "deposit";
+  mode: "idle" | "walk" | "react" | "type" | "link";
   until: number;
   path: Point[];
   arrive: Arrive;
@@ -27,7 +27,7 @@ export type SimBot = {
   home: Home;
 };
 
-export type FlyOrb = {
+export type NeuralLink = {
   id: string;
   eventId: string;
   botId: string;
@@ -42,10 +42,11 @@ export type Sim = {
   time: number;
   lastRaf: number;
   bots: SimBot[];
-  orbs: FlyOrb[];
+  links: NeuralLink[];
   seen: Set<string>;
   visitorPads: string[];
   filed: Array<{ id: string; text: string }>;
+  reduced: boolean;
 };
 
 const SPEED = 2.45;
@@ -83,10 +84,11 @@ export function createSim(): Sim {
       makeBot("mr-prendagas", HOMES["mr-prendagas"], 1.05),
       makeBot("coach-bates", HOMES["coach-bates"], 1.4),
     ],
-    orbs: [],
+    links: [],
     seen: new Set(),
     visitorPads: [],
     filed: [],
+    reduced: false,
   };
 }
 
@@ -123,13 +125,68 @@ function bubbleText(text: string) {
   return text.length > 86 ? `${text.slice(0, 84)}…` : text;
 }
 
+function atDesk(bot: SimBot) {
+  return Math.hypot(bot.x - bot.home.desk.x, bot.y - bot.home.desk.y) < 0.08;
+}
+
+function park(bot: SimBot) {
+  bot.x = bot.home.desk.x;
+  bot.y = bot.home.desk.y;
+  bot.path = [];
+  bot.carrying = false;
+}
+
+function fireLink(sim: Sim, bot: SimBot) {
+  if (!bot.event) {
+    bot.mode = "idle";
+    bot.pose = "idle";
+    return;
+  }
+  park(bot);
+  bot.mode = "link";
+  bot.pose = sim.reduced ? "idle" : "type";
+  bot.bulb = false;
+  bot.status = "Beaming it to the Big Brain";
+  sim.links.push({
+    id: `link-${bot.event.id}`,
+    eventId: bot.event.id,
+    botId: bot.id,
+    text: bot.event.text,
+    from: { x: bot.home.desk.x, y: bot.home.desk.y },
+    to: { ...BRAIN },
+    t: 0,
+    color: accentFor(bot.id),
+  });
+}
+
+function startReact(sim: Sim, bot: SimBot) {
+  const type = bot.event?.type;
+  bot.mode = "react";
+  bot.pose = type === "alert" ? "alert" : "jump";
+  bot.bulb = type === "learned";
+  bot.nonce += 1;
+  bot.until = sim.time + (type === "learned" ? 0.7 : 0.5);
+  bot.status = "Sending it to the Big Brain";
+}
+
 function beginEvent(sim: Sim, bot: SimBot, event: ClientEvent) {
   bot.event = event;
   bot.bubble = bubbleText(event.text);
   bot.bubbleKind = event.type;
   bot.carrying = false;
   bot.bulb = false;
+  if (sim.reduced) {
+    fireLink(sim, bot);
+    return;
+  }
   if (event.type === "task_started") {
+    if (atDesk(bot)) {
+      bot.mode = "type";
+      bot.pose = "type";
+      bot.until = sim.time + 1.5;
+      bot.status = "Working the new one";
+      return;
+    }
     bot.mode = "walk";
     bot.pose = "walk";
     bot.path = [bot.home.desk];
@@ -137,56 +194,29 @@ function beginEvent(sim: Sim, bot: SimBot, event: ClientEvent) {
     bot.status = "Heading to the desk";
     return;
   }
-  bot.mode = "react";
-  bot.pose = event.type === "alert" ? "alert" : "jump";
-  bot.bulb = event.type === "learned";
-  bot.nonce += 1;
-  bot.until = sim.time + (event.type === "learned" ? 1.05 : 0.82);
-  bot.status = event.type === "alert" ? "Flagging it" : "Got something new";
+  if (!atDesk(bot)) {
+    bot.mode = "walk";
+    bot.pose = "walk";
+    bot.path = [bot.home.desk];
+    bot.arrive = "react";
+    bot.status = "Back to the desk";
+    return;
+  }
+  startReact(sim, bot);
 }
 
-function beginCarry(bot: SimBot) {
-  bot.mode = "walk";
-  bot.pose = "walk";
-  bot.carrying = true;
-  bot.bulb = false;
-  bot.path = [...bot.home.toBrain];
-  bot.arrive = "deposit";
-  bot.status = "Carrying a note to the Big Brain";
-}
-
-function startDeposit(sim: Sim, bot: SimBot) {
-  bot.mode = "deposit";
-  bot.pose = "jump";
-  bot.carrying = false;
-  bot.nonce += 1;
-  bot.status = "Filing it in the Big Brain";
-  bot.until = sim.time + 1.4;
-  if (!bot.event) return;
-  sim.orbs.push({
-    id: `orb-${bot.event.id}`,
-    eventId: bot.event.id,
-    botId: bot.id,
-    text: bot.event.text,
-    from: { x: bot.x, y: bot.y },
-    to: { ...BRAIN },
-    t: 0,
-    color: accentFor(bot.id),
-  });
-}
-
-function startReturn(bot: SimBot) {
-  bot.mode = "walk";
-  bot.pose = "walk";
-  bot.carrying = false;
-  bot.bulb = false;
-  bot.bubble = null;
+function releaseBot(sim: Sim, bot: SimBot) {
+  bot.mode = "idle";
+  bot.pose = "idle";
   bot.event = null;
-  bot.status = "Heading back";
-  const back = [...bot.home.toBrain].reverse().slice(1);
-  const spot = bot.home.wander[Math.floor(Math.random() * bot.home.wander.length)] ?? bot.home.desk;
-  bot.path = [...back, spot];
-  bot.arrive = "idle";
+  bot.bubble = null;
+  bot.bulb = false;
+  bot.carrying = false;
+  bot.until = sim.time + 0.45;
+  bot.status = "In the department";
+  if (bot.queue.length === 0) return;
+  const next = bot.queue.shift();
+  if (next) beginEvent(sim, bot, next);
 }
 
 function move(bot: SimBot, dt: number): boolean {
@@ -218,25 +248,24 @@ function finishWalk(sim: Sim, bot: SimBot) {
   if (bot.arrive === "type") {
     bot.mode = "type";
     bot.pose = "type";
-    bot.until = sim.time + (bot.event ? 1.6 : 2.6);
+    bot.until = sim.time + (bot.event ? 1.5 : 2.2);
     bot.status = bot.event ? "Working the new one" : "At the desk";
     return;
   }
-  if (bot.arrive === "deposit") {
-    startDeposit(sim, bot);
+  if (bot.arrive === "react") {
+    startReact(sim, bot);
     return;
   }
   bot.mode = "idle";
   bot.pose = "idle";
-  bot.carrying = false;
   bot.event = null;
   bot.bubble = null;
-  bot.until = sim.time + 0.8 + Math.random() * (bot.arrive === "idle" ? 2.1 : 1.6);
+  bot.until = sim.time + 0.8 + Math.random() * 1.8;
   bot.status = "In the department";
 }
 
 function stepBot(sim: Sim, bot: SimBot, dt: number) {
-  if (!bot.event && bot.queue.length > 0) {
+  if (!bot.event && bot.queue.length > 0 && bot.mode !== "link") {
     const next = bot.queue.shift();
     if (next) beginEvent(sim, bot, next);
   }
@@ -247,7 +276,7 @@ function stepBot(sim: Sim, bot: SimBot, dt: number) {
       bot.carrying = false;
       bot.bulb = false;
       bot.status = "In the department";
-      if (sim.time < bot.until) break;
+      if (sim.reduced || sim.time < bot.until) break;
       if (Math.random() < 0.3) {
         bot.mode = "walk";
         bot.pose = "walk";
@@ -263,20 +292,29 @@ function stepBot(sim: Sim, bot: SimBot, dt: number) {
         bot.status = "Walking the room";
       }
       break;
-    case "walk": {
+    case "walk":
+      if (sim.reduced) {
+        park(bot);
+        bot.pose = "idle";
+        if (bot.event) fireLink(sim, bot);
+        else {
+          bot.mode = "idle";
+          bot.status = "In the department";
+        }
+        break;
+      }
       bot.pose = "walk";
       if (move(bot, dt)) finishWalk(sim, bot);
       break;
-    }
     case "react":
       bot.pose = bot.bubbleKind === "alert" ? "alert" : "jump";
       bot.bulb = bot.bubbleKind === "learned";
-      if (sim.time >= bot.until) beginCarry(bot);
+      if (sim.time >= bot.until) fireLink(sim, bot);
       break;
     case "type":
       bot.pose = "type";
       if (sim.time >= bot.until) {
-        if (bot.event) beginCarry(bot);
+        if (bot.event) fireLink(sim, bot);
         else {
           bot.mode = "idle";
           bot.pose = "idle";
@@ -286,30 +324,30 @@ function stepBot(sim: Sim, bot: SimBot, dt: number) {
         }
       }
       break;
-    case "deposit":
-      bot.pose = "jump";
-      if (sim.time >= bot.until && !sim.orbs.some((orb) => orb.botId === bot.id)) {
-        startReturn(bot);
+    case "link":
+      if (sim.links.some((link) => link.eventId === bot.event?.id)) {
+        bot.pose = sim.reduced ? "idle" : "type";
+        bot.status = "Beaming it to the Big Brain";
+        break;
       }
+      releaseBot(sim, bot);
       break;
     default:
       break;
   }
 }
 
-function stepOrbs(sim: Sim, dt: number) {
-  const staying: FlyOrb[] = [];
-  for (const orb of sim.orbs) {
-    orb.t += dt / 0.7;
-    if (orb.t >= 1) {
-      sim.filed.push({ id: orb.eventId, text: orb.text });
-      const bot = sim.bots.find((item) => item.id === orb.botId);
-      if (bot && bot.mode === "deposit" && bot.event?.id === orb.eventId) startReturn(bot);
+function stepLinks(sim: Sim, dt: number) {
+  const staying: NeuralLink[] = [];
+  for (const link of sim.links) {
+    if (!sim.reduced) link.t += dt / 1.05;
+    if (sim.reduced || link.t >= 1) {
+      sim.filed.push({ id: link.eventId, text: link.text });
       continue;
     }
-    staying.push(orb);
+    staying.push(link);
   }
-  sim.orbs = staying;
+  sim.links = staying;
 }
 
 export function stepSim(sim: Sim, rafNow: number) {
@@ -321,7 +359,7 @@ export function stepSim(sim: Sim, rafNow: number) {
   sim.time += dt;
   sim.filed = [];
   for (const bot of sim.bots) stepBot(sim, bot, dt);
-  stepOrbs(sim, dt);
+  stepLinks(sim, dt);
 }
 
 export function visualSignature(sim: Sim) {
@@ -341,19 +379,32 @@ export function visualSignature(sim: Sim) {
     .join("|");
 }
 
-export function orbScreen(orb: FlyOrb) {
-  const start = project(orb.from.x, orb.from.y);
-  const end = project(orb.to.x, orb.to.y);
+export function linkGeometry(link: NeuralLink) {
+  const start = project(link.from.x, link.from.y);
+  const end = project(link.to.x, link.to.y);
   const from = { sx: start.sx, sy: start.sy - 86 };
-  const to = { sx: end.sx, sy: end.sy - 78 };
-  const control = {
-    sx: (from.sx + to.sx) / 2,
-    sy: Math.min(from.sy, to.sy) - 110,
+  const to = { sx: end.sx, sy: end.sy - 96 };
+  const dx = to.sx - from.sx;
+  const dy = to.sy - from.sy;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const bend = Math.min(150, len * 0.24);
+  const c1 = { sx: from.sx + dx * 0.32 + nx * bend, sy: from.sy + dy * 0.18 + ny * bend - 36 };
+  const c2 = { sx: from.sx + dx * 0.72 + nx * bend * 0.28, sy: from.sy + dy * 0.66 + ny * bend * 0.12 - 18 };
+  const pointAt = (t: number) => {
+    const clamped = Math.min(1, Math.max(0, t));
+    const u = 1 - clamped;
+    return {
+      sx: u * u * u * from.sx + 3 * u * u * clamped * c1.sx + 3 * u * clamped * clamped * c2.sx + clamped * clamped * clamped * to.sx,
+      sy: u * u * u * from.sy + 3 * u * u * clamped * c1.sy + 3 * u * clamped * clamped * c2.sy + clamped * clamped * clamped * to.sy,
+    };
   };
-  const t = Math.min(1, orb.t);
-  const u = 1 - t;
-  return {
-    sx: u * u * from.sx + 2 * u * t * control.sx + t * t * to.sx,
-    sy: u * u * from.sy + 2 * u * t * control.sy + t * t * to.sy,
-  };
+  const travel = Math.min(1, Math.max(0, link.t));
+  const stars = [0, 0.09, 0.18]
+    .map((lag, index) => ({ t: travel - lag, r: index === 0 ? 6 : 3.5 }))
+    .filter((star) => star.t > 0.03)
+    .map((star) => ({ ...pointAt(star.t), r: star.r }));
+  const d = `M ${from.sx} ${from.sy} C ${c1.sx} ${c1.sy}, ${c2.sx} ${c2.sy}, ${to.sx} ${to.sy}`;
+  return { d, stars };
 }

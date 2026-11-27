@@ -12,7 +12,7 @@ import {
   WORLD_H,
   WORLD_W,
 } from "@/lib/iso";
-import { createSim, ingest, orbScreen, stepSim, visualSignature, type Pose, type Sim } from "@/lib/sim";
+import { createSim, ingest, linkGeometry, stepSim, visualSignature, type NeuralLink, type Pose, type Sim } from "@/lib/sim";
 import type { ClientEvent, EventType } from "@/lib/types";
 import { BigBrain } from "@/components/big-brain";
 import { MinionSprite } from "@/components/minion-sprite";
@@ -33,12 +33,7 @@ type DrawBot = {
   status: string;
 };
 
-type DrawOrb = {
-  id: string;
-  sx: number;
-  sy: number;
-  color: string;
-};
+type ReplyBubble = { text: string; nonce: number };
 
 function initialBots(): DrawBot[] {
   return Object.entries(HOMES).map(([id, home]) => ({
@@ -68,16 +63,20 @@ export function OfficeScene({
   events,
   selectedId,
   onSelect,
+  onOpenBrain,
   onFiled,
   onStatuses,
   notes,
+  replyBubbles,
 }: {
   events: ClientEvent[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onOpenBrain: () => void;
   onFiled: (id: string) => void;
   onStatuses: (statuses: Record<string, string>) => void;
   notes: number;
+  replyBubbles: Record<string, ReplyBubble | undefined>;
 }) {
   const eventsRef = useRef(events);
   const onFiledRef = useRef(onFiled);
@@ -86,8 +85,9 @@ export function OfficeScene({
   const sigRef = useRef("");
 
   const [drawBots, setDrawBots] = useState<DrawBot[]>(initialBots);
-  const [orbs, setOrbs] = useState<DrawOrb[]>([]);
+  const [links, setLinks] = useState<NeuralLink[]>([]);
   const [pulse, setPulse] = useState(0);
+  const reducedRef = useRef(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [vp, setVp] = useState({ w: 1100, h: 720 });
   const brain = project(BRAIN.x, BRAIN.y);
@@ -138,10 +138,21 @@ export function OfficeScene({
   }, [banner]);
 
   useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const apply = () => {
+      reducedRef.current = media.matches;
+    };
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, []);
+
+  useEffect(() => {
     const sim: Sim = createSim();
     let frame = 0;
     const loop = (now: number) => {
       ingest(sim, eventsRef.current);
+      sim.reduced = reducedRef.current;
       stepSim(sim, now);
       const bots = sim.bots.map((bot) => ({
         id: bot.id,
@@ -157,12 +168,8 @@ export function OfficeScene({
         nonce: bot.nonce,
         status: bot.status,
       }));
-      const nextOrbs = sim.orbs.map((orb) => {
-        const point = orbScreen(orb);
-        return { id: orb.id, sx: point.sx, sy: point.sy, color: orb.color };
-      });
       setDrawBots(bots);
-      setOrbs(nextOrbs);
+      setLinks(sim.links.map((link) => ({ ...link, from: { ...link.from }, to: { ...link.to } })));
       const signature = visualSignature(sim);
       if (signature !== sigRef.current) {
         sigRef.current = signature;
@@ -174,7 +181,7 @@ export function OfficeScene({
         setBanner(batch[batch.length - 1]?.text ?? null);
         for (const item of batch) onFiledRef.current(item.id);
         const node = brainWrapRef.current;
-        if (node) {
+        if (node && !reducedRef.current) {
           node.classList.remove("is-pulsing");
           void node.offsetWidth;
           node.classList.add("is-pulsing");
@@ -283,7 +290,15 @@ export function OfficeScene({
           );
         })}
         <div ref={brainWrapRef} className="absolute left-0 top-0 z-[1100]" style={{ transform: `translate(${brain.sx}px, ${brain.sy}px)` }}>
-          <BigBrain pulse={pulse} />
+          <button
+            type="button"
+            className="brain-hit"
+            style={{ transform: "translate(-50%, -92%)" }}
+            onClick={onOpenBrain}
+            aria-label="Open the Big Brain. Filed notes and open grade tasks."
+          >
+            <BigBrain pulse={pulse} />
+          </button>
           <div className="brain-count" style={{ transform: `translate(-50%, 6px) scale(${inverse})` }}>
             {notes} {notes === 1 ? "note" : "notes"} filed
           </div>
@@ -293,23 +308,59 @@ export function OfficeScene({
             </div>
           ) : null}
         </div>
-        {orbs.map((orb) => (
-          <div
-            key={orb.id}
-            className="fly-orb"
-            style={{
-              left: orb.sx,
-              top: orb.sy,
-              background: orb.color,
-              color: orb.color,
-              transform: `translate(-50%, -50%) scale(${inverse})`,
-              zIndex: 1600,
-            }}
-          />
-        ))}
+        <svg className="pointer-events-none absolute inset-0 z-[1700]" width={WORLD_W} height={WORLD_H} aria-hidden>
+          {links.map((link) => {
+            const geometry = linkGeometry(link);
+            return (
+              <path
+                key={link.id}
+                d={geometry.d}
+                fill="none"
+                stroke={link.color}
+                strokeWidth={7 * inverse}
+                strokeLinecap="round"
+                opacity={0.28}
+              />
+            );
+          })}
+          {links.map((link) => {
+            const geometry = linkGeometry(link);
+            return (
+              <path
+                key={`${link.id}-core`}
+                d={geometry.d}
+                fill="none"
+                stroke={link.color}
+                strokeWidth={2.2 * inverse}
+                strokeLinecap="round"
+                strokeDasharray={`${4 * inverse} ${9 * inverse}`}
+              />
+            );
+          })}
+        </svg>
+        {links.flatMap((link) => {
+          const geometry = linkGeometry(link);
+          return geometry.stars.map((star, index) => (
+            <div
+              key={`${link.id}-star-${index}`}
+              className="synapse-star"
+              style={{
+                left: star.sx,
+                top: star.sy,
+                width: star.r * 2,
+                height: star.r * 2,
+                color: link.color,
+                transform: `translate(-50%, -50%) scale(${inverse})`,
+              }}
+            />
+          ));
+        })}
         {drawBots.map((bot) => {
           const point = project(bot.x, bot.y);
+          const reply = replyBubbles[bot.id];
           const bubbleTone = bot.bubbleKind ? TYPE_META[bot.bubbleKind].bubble : "";
+          const bubbleCopy = reply?.text ?? bot.bubble;
+          const bubbleClass = reply ? "bubble bg-cyan-50 text-cyan-950" : `bubble ${bubbleTone}`;
           return (
             <div
               key={bot.id}
@@ -322,10 +373,10 @@ export function OfficeScene({
                 <span className="nameplate" style={{ transform: `translate(-50%, 8px) scale(${inverse})` }}>
                   {bot.name}
                 </span>
-                <span key={bot.nonce} className={`bob pose-${bot.pose}`}>
-                  {bot.bubble ? (
-                    <span className={`bubble ${bubbleTone}`} style={{ transform: `translate(-50%, 0) scale(${inverse})` }}>
-                      {bot.bubble}
+                <span key={reply?.nonce ?? bot.nonce} className={`bob pose-${bot.pose}`}>
+                  {bubbleCopy ? (
+                    <span className={bubbleClass} style={{ transform: `translate(-50%, 0) scale(${inverse})` }}>
+                      {bubbleCopy}
                     </span>
                   ) : null}
                   {bot.bulb ? (
@@ -373,11 +424,17 @@ export function OfficeScene({
               {entry.label}
             </Button>
           ))}
-          {zoomed ? (
-            <Button type="button" size="sm" variant="ghost" onClick={() => panTo(BRAIN.x, BRAIN.y)}>
-              Big Brain
-            </Button>
-          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              onOpenBrain();
+              if (zoomed) panTo(BRAIN.x, BRAIN.y);
+            }}
+          >
+            Big Brain
+          </Button>
         </div>
       </div>
     </div>

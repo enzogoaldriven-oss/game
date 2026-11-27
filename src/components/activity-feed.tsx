@@ -66,7 +66,7 @@ export function ActivityFeed({
         ) : null}
         {!loading && !error && rows.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 p-4 text-sm text-white/75">
-            The log is quiet. The crew is pacing their rooms. Turn on Simulate, or have a bot POST a note to <span className="font-mono text-cyan-100">/api/events</span>.
+            The log is quiet. Real check-ins show up here when a bot posts to <span className="font-mono text-cyan-100">/api/events</span>.
           </div>
         ) : null}
         <ol className="space-y-2" aria-live="polite">
@@ -104,7 +104,7 @@ export function ActivityFeed({
                         {event.delivery === "enroute" ? (
                           <>
                             <i className="pulse-dot h-1.5 w-1.5 rounded-full bg-cyan-200" />
-                            On the way to the Big Brain
+                            Beaming to the Big Brain
                           </>
                         ) : (
                           "Filed in the Big Brain"

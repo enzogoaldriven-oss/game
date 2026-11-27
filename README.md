@@ -1,6 +1,6 @@
 # The Crew HQ
 
-A live isometric office for Enzo's helper bots. Ms Boone, Ms Bhon, Mr Prendagas, and Coach Bates idle, walk, and work in their departments. When a bot checks in, they react, carry a glowing note to the Big Brain in the middle, and every open browser updates.
+A live isometric office for Enzo's helper bots. Ms Boone, Ms Bhon, Mr Prendagas, and Coach Bates idle, walk, and work in their departments. When a bot checks in, they stay at their desk and fire a glowing synapse beam into the Big Brain. Every open browser updates. Simulate is off unless you turn it on, and it only plays sample lines on that screen.
 
 ## Run it
 
@@ -27,8 +27,9 @@ CREW_HQ_VIEW_PASSWORD=a-password-enzo-will-type
 
 Production (`npm start`, Docker, or Render) does not fall back to the dev secret or the dev viewer password.
 
-- `CREW_HQ_VIEW_PASSWORD` gates the page, `GET /api/events`, and `GET /api/events/stream`.
-- `CREW_HQ_SECRET` gates `POST /api/events` only. Bots do not need the viewer password.
+- `CREW_HQ_VIEW_PASSWORD` gates the page, the grade list for a person, chat from the page, `GET /api/events`, and `GET /api/events/stream`.
+- `CREW_HQ_SECRET` gates bot writes: `POST /api/events`, todo create/update/delete, and chat pending/reply. Bots do not need the viewer password.
+- `GET /api/todos` and `GET /api/chat` accept either the viewer cookie or `x-crew-secret`.
 - Changing the viewer password signs out existing browsers. The cookie is also signed with `CREW_HQ_SECRET` when that is set.
 
 Don't put passwords or private writeups in event `text`. The floor is as private as the viewer password and whoever you host it with.
@@ -54,11 +55,13 @@ curl -X POST http://localhost:3847/api/events \
 
 ### What the floor does
 
-- `learned` — lightbulb and a jump, then the bot carries an orb to the Big Brain.
-- `task_started` — they walk to the desk and type, then carry the orb.
-- `task_done`, `message`, `alert` — a jump or a shake, then the orb delivery.
-- The brain pulses when the orb lands, and the activity log marks the note as filed.
-- The same event is pushed to every open browser over Server-Sent Events.
+- The bot stays in their department. They do not run to the Big Brain.
+- `learned` — lightbulb and a jump, then a curved beam in their color.
+- `task_started` — they go to the desk and type, then the beam.
+- `task_done`, `message`, `alert` — a jump or a shake, then the beam.
+- Small glowing stars travel the beam. The brain pulses when a star hits, and the activity log marks the note as filed.
+- If the browser asks for reduced motion, the note files immediately with no traveling stars and no pulse animation.
+- The same event is pushed to every open browser over Server-Sent Events. Todo and chat updates use that same stream as named events `todo` and `chat`.
 
 ### Sample check-ins
 
@@ -113,11 +116,92 @@ curl -b /tmp/crew-cookies http://localhost:3847/api/events
 | Mr Prendagas | History & Government | Navy suit, red tie, gavel, Constitution scroll |
 | Coach Bates | P.E. | Green tracksuit, whistle, stopwatch, dumbbell |
 
-Click a character for what they're doing and their recent check-ins. On a phone, drag the floor and use the name chips to find someone.
+Click a character to open a chat with that bot. Click the Big Brain (or the Big Brain chip) for every filed note, grouped by bot, plus the open grade items. **Message the crew** in that panel is the everyone thread. On a phone, drag the floor and use the name chips to find someone. Grades sit on the right on a wide screen, and behind the Grades button on a phone.
+
+## Grades
+
+The side panel is **How to raise my grades**. It groups real items only. Nothing is seeded.
+
+Classes: `Psychology` (Ms Boone), `Ethnic Studies` (Ms Bhon), `Gov/History` (Mr Prendagas), `PE` (Coach Bates).
+
+The top of the panel shows how many items are open in each class, and the next dated item.
+
+Checking an item done, or back to to-do, sends `PATCH` with the viewer cookie.
+
+```bash
+curl -X POST http://localhost:3847/api/todos \
+  -H "Content-Type: application/json" \
+  -H "x-crew-secret: dev-crew-secret" \
+  -d '{"bot":"ms boone","class":"Psychology","title":"Finish the chapter quiz","due":"2026-12-02","priority":"high","link":"https://example.com/quiz"}'
+```
+
+| Field | Value |
+| --- | --- |
+| `bot` | Who posted it. Same names as events. |
+| `class` | `Psychology`, `Ethnic Studies`, `Gov/History`, or `PE` |
+| `title` | 1–140 characters |
+| `due` | Optional `YYYY-MM-DD` |
+| `priority` | Optional `low`, `normal`, or `high`. Default `normal` |
+| `link` | Optional `http` or `https` URL |
+
+```bash
+curl -X PATCH http://localhost:3847/api/todos/TODO_ID \
+  -H "Content-Type: application/json" \
+  -H "x-crew-secret: dev-crew-secret" \
+  -d '{"status":"done"}'
+
+curl -X DELETE http://localhost:3847/api/todos/TODO_ID \
+  -H "x-crew-secret: dev-crew-secret"
+
+curl -b /tmp/crew-cookies http://localhost:3847/api/todos
+```
+
+`PATCH` also accepts the viewer cookie, but then the only field allowed is `status` (`todo` or `done`). Bots can also change `title`, `due`, `priority`, `link`, and `class`.
+
+- `201` `{ "todo": { ... } }` on create
+- `200` `{ "todo": { ... } }` on update
+- `200` `{ "ok": true }` on delete
+- `401` missing cookie and secret, or a bot route without the secret
+- `404` unknown id
+- `400` bad fields
+
+## Chat
+
+Click a minion to message that bot. The Big Brain panel's **Message the crew** button messages everyone. Unanswered messages from Enzo show **Waiting for a reply**. The drawer says bots check in every few minutes. A reply puts a speech bubble on that minion.
+
+Viewer message (cookie, not the bot secret):
+
+```bash
+curl -b /tmp/crew-cookies -X POST http://localhost:3847/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"bot":"ms boone","text":"What should I redo?"}'
+```
+
+Stored as `from: "enzo"`, `to` the bot id (or `everyone`), `answered: false`, plus `id` and `timestamp`.
+
+Bots poll, then reply:
+
+```bash
+curl -H "x-crew-secret: dev-crew-secret" \
+  "http://localhost:3847/api/chat/pending?bot=ms%20boone"
+
+curl -X POST http://localhost:3847/api/chat/reply \
+  -H "Content-Type: application/json" \
+  -H "x-crew-secret: dev-crew-secret" \
+  -d '{"bot":"ms boone","text":"Redo the exit ticket.","replyTo":"MESSAGE_ID"}'
+```
+
+`pending` for a named bot returns unanswered viewer messages to that bot and to everyone. `bot=everyone` (or `big brain`) returns only the shared thread. A reply marks the original `answered: true` and stores the bot's message on the same thread. A second reply to the same message is `409`.
+
+`text` is 1–500 characters. `GET /api/chat` (cookie or secret) returns the saved messages.
+
+- `201` `{ "message": { ... } }` for a viewer post
+- `201` `{ "message": { ... }, "original": { ... } }` for a reply
+- `200` `{ "messages": [ ... ] }` for list and pending
 
 ## Deploy
 
-This app expects one long-running Node process so the event list and the SSE fan-out stay in memory together. `data/events.json` is the durable copy.
+This app expects one long-running Node process so the event list, grade items, chat, and the SSE fan-out stay in memory together. `data/events.json`, `data/todos.json`, and `data/chat.json` are the copies on disk. None of them are seeded with personal assignments or messages.
 
 ```bash
 npm run build
@@ -139,7 +223,9 @@ Vercel-style serverless hosting will boot separate instances, so a POST can miss
 
 ### Render
 
-`render.yaml` is set for the free plan: one Docker web service, no disk. Free instances sleep when idle, which drops open live streams until the next visit wakes the service. The filesystem is wiped on restart and redeploy, so `data/events.json` does not survive those. The viewer password still locks the page. To keep the log later, change `plan` to `0.5c-512mb` and add a disk mounted at `/app/data` (paid plans only).
+`render.yaml` is set for the free plan: one Docker web service, no disk. Free instances sleep when idle, which drops open live streams until the next visit wakes the service. The filesystem is wiped on restart and redeploy, so `data/events.json`, `data/todos.json`, and `data/chat.json` do not survive those. The viewer password still locks the page. To keep the log later, change `plan` to `0.5c-512mb` and add a disk mounted at `/app/data` (paid plans only).
+
+Grades and chat do not add environment variables. On a service that already has `CREW_HQ_SECRET` and `CREW_HQ_VIEW_PASSWORD`, the update is **Manual Deploy** → **Deploy latest commit** when auto-deploy is off.
 
 What a person has to do:
 

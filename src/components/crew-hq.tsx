@@ -1,18 +1,21 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityFeed } from "@/components/activity-feed";
-import { MinionSprite } from "@/components/minion-sprite";
+import { BrainPanel } from "@/components/brain-panel";
+import { ChatDrawer, type ChatTarget } from "@/components/chat-drawer";
+import { GradeDashboard } from "@/components/grade-dashboard";
 import { OfficeScene } from "@/components/office-scene";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
-import { DEMO_SCRIPT, hueFor, profileFor, resolveBot, variantFor } from "@/lib/bots";
-import type { ClientEvent, CrewEvent } from "@/lib/types";
+import { DEMO_SCRIPT, profileFor, resolveBot } from "@/lib/bots";
+import { EVERYONE_ID, type ChatMessage, type ClientEvent, type CrewEvent, type GradeTodo, type TodoStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type LinkState = "connecting" | "live" | "reconnecting";
+type MobilePanel = "closed" | "grades" | "activity";
+type ReplyBubble = { text: string; nonce: number };
 
 class LoginRequired extends Error {}
 
@@ -24,26 +27,68 @@ async function fetchEvents(): Promise<CrewEvent[]> {
   return data.events ?? [];
 }
 
+async function fetchTodos(): Promise<GradeTodo[]> {
+  const response = await fetch("/api/todos", { cache: "no-store" });
+  if (response.status === 401) throw new LoginRequired();
+  if (!response.ok) throw new Error("grades unavailable");
+  const data = (await response.json()) as { todos?: GradeTodo[] };
+  return data.todos ?? [];
+}
+
+async function fetchChat(): Promise<ChatMessage[]> {
+  const response = await fetch("/api/chat", { cache: "no-store" });
+  if (response.status === 401) throw new LoginRequired();
+  if (!response.ok) throw new Error("chat unavailable");
+  const data = (await response.json()) as { messages?: ChatMessage[] };
+  return data.messages ?? [];
+}
+
+function upsertTodo(list: GradeTodo[], todo: GradeTodo) {
+  const index = list.findIndex((item) => item.id === todo.id);
+  if (index < 0) return [...list, todo];
+  const next = list.slice();
+  next[index] = todo;
+  return next;
+}
+
+function upsertMessage(list: ChatMessage[], message: ChatMessage) {
+  const index = list.findIndex((item) => item.id === message.id);
+  if (index < 0) return [...list, message];
+  const next = list.slice();
+  next[index] = message;
+  return next;
+}
+
+function clip(text: string) {
+  return text.length > 72 ? `${text.slice(0, 71)}…` : text;
+}
+
 export function CrewHQ() {
   const router = useRouter();
+  const alive = useRef(true);
   const [events, setEvents] = useState<ClientEvent[]>([]);
+  const [todos, setTodos] = useState<GradeTodo[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [todoError, setTodoError] = useState<string | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
   const [link, setLink] = useState<LinkState>("connecting");
   const demo = useSyncExternalStore(subscribeDemo, readDemo, () => false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [chatTarget, setChatTarget] = useState<string | null>(null);
+  const [brainOpen, setBrainOpen] = useState(false);
   const [statuses, setStatuses] = useState<Record<string, string>>({});
   const [justFiledId, setJustFiledId] = useState<string | null>(null);
-  const [logOpen, setLogOpen] = useState(true);
+  const [panel, setPanel] = useState<MobilePanel>("closed");
+  const [busyTodo, setBusyTodo] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [replyBubbles, setReplyBubbles] = useState<Record<string, ReplyBubble | undefined>>({});
 
   const mergeServer = useCallback((incoming: CrewEvent[]) => {
     setEvents((current) => {
       const map = new Map(current.map((event) => [event.id, event]));
       for (const event of incoming) {
-        if (!map.has(event.id)) {
-          const filed: ClientEvent = { ...event, delivery: "filed" };
-          map.set(event.id, filed);
-        }
+        if (!map.has(event.id)) map.set(event.id, { ...event, delivery: "filed" });
       }
       return [...map.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-200);
     });
@@ -51,19 +96,45 @@ export function CrewHQ() {
 
   const reload = useCallback(async () => {
     try {
-      const incoming = await fetchEvents();
-      mergeServer(incoming);
+      mergeServer(await fetchEvents());
       setError(null);
-    } catch (error) {
-      if (error instanceof LoginRequired) {
+    } catch (reason) {
+      if (reason instanceof LoginRequired) {
         router.refresh();
         return;
       }
       setError("The log didn't load.");
+    }
+    try {
+      setTodos(await fetchTodos());
+      setTodoError(null);
+    } catch (reason) {
+      if (reason instanceof LoginRequired) {
+        router.refresh();
+        return;
+      }
+      setTodoError("Grades didn't load.");
+    }
+    try {
+      setMessages(await fetchChat());
+      setChatError(null);
+    } catch (reason) {
+      if (reason instanceof LoginRequired) {
+        router.refresh();
+        return;
+      }
+      setChatError("Chat didn't load.");
     } finally {
       setLoading(false);
     }
   }, [mergeServer, router]);
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let source: EventSource | null = null;
@@ -94,6 +165,40 @@ export function CrewHQ() {
           /* ignore malformed frames */
         }
       };
+      source.addEventListener("todo", (message) => {
+        try {
+          const frame = JSON.parse((message as MessageEvent).data) as
+            | { action: "delete"; id: string }
+            | { action: "upsert"; todo: GradeTodo };
+          if (frame.action === "delete") {
+            setTodos((current) => current.filter((todo) => todo.id !== frame.id));
+            return;
+          }
+          setTodos((current) => upsertTodo(current, frame.todo));
+        } catch {
+          /* ignore malformed frames */
+        }
+      });
+      source.addEventListener("chat", (message) => {
+        try {
+          const chat = JSON.parse((message as MessageEvent).data) as ChatMessage;
+          setMessages((current) => upsertMessage(current, chat));
+          if (chat.from === "enzo") return;
+          const nonce = Date.now();
+          setReplyBubbles((current) => ({ ...current, [chat.from]: { text: clip(chat.text), nonce } }));
+          window.setTimeout(() => {
+            if (!alive.current) return;
+            setReplyBubbles((current) => {
+              if (current[chat.from]?.nonce !== nonce) return current;
+              const next = { ...current };
+              delete next[chat.from];
+              return next;
+            });
+          }, 7000);
+        } catch {
+          /* ignore malformed frames */
+        }
+      });
     })();
     return () => {
       cancelled = true;
@@ -142,21 +247,96 @@ export function CrewHQ() {
   }, []);
 
   const notes = events.filter((event) => event.delivery === "filed").length;
-  const selected = useMemo(() => {
-    if (!selectedId) return null;
-    const profile = profileFor(selectedId);
-    const sample = [...events].reverse().find((event) => event.bot === selectedId);
+
+  const openChat = useCallback((id: string) => {
+    setChatTarget(id);
+    setBrainOpen(false);
+    setChatError(null);
+  }, []);
+
+  const chat = useMemo<ChatTarget | null>(() => {
+    if (!chatTarget) return null;
+    if (chatTarget === EVERYONE_ID) {
+      return {
+        id: EVERYONE_ID,
+        name: "Big Brain",
+        department: "Everyone",
+        blurb: "One thread for the whole crew.",
+        status: "Anyone on the floor can answer.",
+      };
+    }
+    const profile = profileFor(chatTarget);
+    const sample = [...events].reverse().find((event) => event.bot === chatTarget);
     return {
-      id: selectedId,
+      id: chatTarget,
       name: profile?.name ?? sample?.botName ?? "Visitor",
       department: profile?.department ?? sample?.department ?? "Visiting",
       blurb: profile?.blurb ?? "New helper. They clocked in with a note and took a spare pad.",
-      recent: events.filter((event) => event.bot === selectedId).slice(-8).reverse(),
+      status: statuses[chatTarget] ?? "On the floor",
     };
-  }, [events, selectedId]);
+  }, [chatTarget, events, statuses]);
+
+  const thread = useMemo(
+    () => (chat ? messages.filter((message) => message.to === chat.id) : []),
+    [chat, messages],
+  );
 
   function toggleDemo(next: boolean) {
     writeDemo(next);
+    if (!next) setEvents((current) => current.filter((event) => !event.simulated));
+  }
+
+  async function toggleTodo(todo: GradeTodo, status: TodoStatus) {
+    setBusyTodo(todo.id);
+    setTodoError(null);
+    try {
+      const response = await fetch(`/api/todos/${encodeURIComponent(todo.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (response.status === 401) {
+        router.refresh();
+        return;
+      }
+      if (!response.ok) {
+        setTodoError("Couldn't update that item.");
+        return;
+      }
+      const data = (await response.json()) as { todo: GradeTodo };
+      setTodos((current) => upsertTodo(current, data.todo));
+    } catch {
+      setTodoError("Couldn't update that item.");
+    } finally {
+      setBusyTodo(null);
+    }
+  }
+
+  async function sendChat(text: string) {
+    if (!chatTarget || sending) return;
+    setSending(true);
+    setChatError(null);
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bot: chatTarget, text }),
+      });
+      if (response.status === 401) {
+        router.refresh();
+        return;
+      }
+      if (!response.ok) {
+        setChatError("Message didn't send.");
+        return;
+      }
+      const data = (await response.json()) as { message: ChatMessage };
+      setMessages((current) => upsertMessage(current, data.message));
+    } catch {
+      setChatError("Message didn't send.");
+    } finally {
+      setSending(false);
+    }
   }
 
   const linkCopy = link === "live" ? "Live" : link === "reconnecting" ? "Reconnecting" : "Linking";
@@ -203,72 +383,94 @@ export function CrewHQ() {
         <main className="relative min-h-0 flex-1 bg-[radial-gradient(ellipse_at_center,#1c2454_0%,#0b1024_58%,#07091a_100%)]">
           <OfficeScene
             events={events}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
+            selectedId={chatTarget && chatTarget !== EVERYONE_ID ? chatTarget : null}
+            onSelect={openChat}
+            onOpenBrain={() => {
+              setBrainOpen(true);
+              setChatTarget(null);
+            }}
             onFiled={onFiled}
             onStatuses={setStatuses}
             notes={notes}
+            replyBubbles={replyBubbles}
           />
         </main>
         <aside
           className={cn(
-            "shrink-0 border-white/10 bg-[#101226]/95 backdrop-blur-md lg:h-auto lg:w-[400px] lg:border-t-0 lg:border-l",
-            logOpen ? "h-[248px] border-t" : "h-14 border-t",
+            "flex min-h-0 shrink-0 flex-col border-white/10 bg-[#101226]/95 backdrop-blur-md lg:h-full lg:w-[400px] lg:border-t-0 lg:border-l",
+            panel === "closed" ? "h-16 border-t" : "h-[min(72dvh,560px)] border-t",
           )}
         >
-          <ActivityFeed
-            events={events}
-            loading={loading}
-            error={error}
-            demo={demo}
-            justFiledId={justFiledId}
-            open={logOpen}
-            onToggle={() => setLogOpen((value) => !value)}
-            onRetry={() => {
-              setLoading(true);
-              void reload();
-            }}
-            onSelect={setSelectedId}
-          />
+          <div className="flex shrink-0 items-center gap-2 px-3 py-2 lg:hidden">
+            <Button
+              type="button"
+              size="sm"
+              variant={panel === "grades" ? "default" : "outline"}
+              aria-expanded={panel === "grades"}
+              onClick={() => setPanel((current) => (current === "grades" ? "closed" : "grades"))}
+            >
+              Grades
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={panel === "activity" ? "default" : "outline"}
+              aria-expanded={panel === "activity"}
+              onClick={() => setPanel((current) => (current === "activity" ? "closed" : "activity"))}
+            >
+              Activity
+            </Button>
+          </div>
+          <div className={cn("min-h-0 flex-1 flex-col", panel === "grades" ? "flex" : "hidden", "lg:flex")}>
+            <GradeDashboard
+              todos={todos}
+              loading={loading}
+              error={todoError}
+              busyId={busyTodo}
+              onToggle={(todo, status) => void toggleTodo(todo, status)}
+              onRetry={() => {
+                setLoading(true);
+                void reload();
+              }}
+            />
+          </div>
+          <div className={cn("min-h-0 flex-1 flex-col lg:h-[46%] lg:flex-none", panel === "activity" ? "flex" : "hidden", "lg:flex")}>
+            <ActivityFeed
+              events={events}
+              loading={loading}
+              error={error}
+              demo={demo}
+              justFiledId={justFiledId}
+              open
+              onToggle={() => setPanel("closed")}
+              onRetry={() => {
+                setLoading(true);
+                void reload();
+              }}
+              onSelect={openChat}
+            />
+          </div>
         </aside>
       </div>
-      <Sheet open={selected !== null} onOpenChange={(open) => !open && setSelectedId(null)}>
-        {selected ? (
-          <SheetContent title={selected.name} description={selected.department}>
-            <div className="flex items-end gap-4">
-              <div className="bob pose-idle rounded-3xl bg-white/5 px-2 pt-3">
-                <MinionSprite
-                  variant={variantFor(selected.id)}
-                  hue={hueFor(selected.id)}
-                  badge={selected.name}
-                  className="h-[168px] w-[160px]"
-                />
-              </div>
-              <div className="pb-3">
-                <p className="text-xs font-extrabold tracking-[0.14em] text-cyan-100/80 uppercase">{selected.department}</p>
-                <p className="mt-2 text-sm leading-snug text-white/80">{selected.blurb}</p>
-                <p className="mt-3 text-sm font-extrabold text-white">{statuses[selected.id] ?? "On the floor"}</p>
-              </div>
-            </div>
-            <h3 className="mt-6 font-display text-lg">Recent check-ins</h3>
-            {selected.recent.length === 0 ? (
-              <p className="mt-2 text-sm text-white/65">Nothing filed yet. They&apos;re still settling in.</p>
-            ) : (
-              <ul className="mt-3 space-y-2">
-                {selected.recent.map((event) => (
-                  <li key={event.id} className="rounded-2xl bg-white/6 px-3 py-2">
-                    <p className="text-sm font-bold">{event.text}</p>
-                    <p className="mt-1 text-[11px] font-bold text-white/50">
-                      {TYPE_LABEL[event.type]}
-                      {event.simulated ? " · sim" : ""} · {event.delivery === "filed" ? "filed" : "on the way"}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </SheetContent>
-        ) : null}
-      </Sheet>
+      <ChatDrawer
+        target={chat}
+        messages={thread}
+        error={chatError}
+        sending={sending}
+        onOpenChange={(open) => {
+          if (!open) setChatTarget(null);
+        }}
+        onSend={(text) => void sendChat(text)}
+      />
+      <BrainPanel
+        open={brainOpen}
+        events={events}
+        todos={todos}
+        busyId={busyTodo}
+        onOpenChange={setBrainOpen}
+        onOpenChat={openChat}
+        onToggle={(todo, status) => void toggleTodo(todo, status)}
+      />
     </div>
   );
 }
@@ -290,11 +492,3 @@ function writeDemo(next: boolean) {
   window.localStorage.setItem("crew-hq-demo", next ? "on" : "off");
   window.dispatchEvent(new Event("crew-hq-demo"));
 }
-
-const TYPE_LABEL = {
-  learned: "Learned",
-  task_started: "Started",
-  task_done: "Done",
-  message: "Note",
-  alert: "Alert",
-} as const;

@@ -1,6 +1,6 @@
 export function BigBrain({ pulse }: { pulse: number }) {
   return (
-    <div className="pointer-events-none relative h-[230px] w-[210px] -translate-x-1/2 -translate-y-[92%]">
+    <div className="relative h-[230px] w-[210px]">
       <div className="brain-glow" />
       <svg viewBox="0 0 210 230" className="brain-svg relative h-full w-full overflow-visible">
         <defs>

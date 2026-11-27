@@ -1,7 +1,7 @@
 # The Crew HQ as one long-running Node service on Render's free plan.
 #
 # Free web services cannot mount a persistent disk. Check-ins live in memory and
-# in data/events.json on the instance filesystem, which is wiped on restart or
+# in data/events.json, data/todos.json, and data/chat.json on the instance filesystem, which is wiped on restart or
 # redeploy. The instance also sleeps when idle, which drops open live streams
 # until the next request wakes it. The viewer password still locks the page.
 #

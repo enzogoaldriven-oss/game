@@ -24,6 +24,40 @@ export type ClientEvent = CrewEvent & {
   delivery: "enroute" | "filed";
 };
 
+export const TODO_STATUSES = ["todo", "done"] as const;
+export type TodoStatus = (typeof TODO_STATUSES)[number];
+
+export const TODO_PRIORITIES = ["low", "normal", "high"] as const;
+export type TodoPriority = (typeof TODO_PRIORITIES)[number];
+
+export type GradeTodo = {
+  id: string;
+  bot: string;
+  botName: string;
+  classId: string;
+  className: string;
+  title: string;
+  due: string | null;
+  status: TodoStatus;
+  priority: TodoPriority;
+  link: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const EVERYONE_ID = "everyone";
+
+export type ChatMessage = {
+  id: string;
+  from: string;
+  fromName: string;
+  to: string;
+  text: string;
+  timestamp: string;
+  answered: boolean;
+  replyTo: string | null;
+};
+
 export function isEventType(value: unknown): value is EventType {
   return typeof value === "string" && (EVENT_TYPES as readonly string[]).includes(value);
 }

@@ -14,11 +14,13 @@ function SheetContent({
   children,
   title,
   description,
+  footer,
 }: {
   className?: string;
   children: React.ReactNode;
   title: string;
   description?: string;
+  footer?: React.ReactNode;
 }) {
   return (
     <Dialog.Portal>
@@ -44,7 +46,10 @@ function SheetContent({
             <X className="h-5 w-5" />
           </Dialog.Close>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-6">{children}</div>
+        <div className={cn("min-h-0 flex-1 px-5 pt-4", footer ? "flex flex-col overflow-hidden" : "overflow-y-auto pb-6")}>
+          {children}
+        </div>
+        {footer ? <div className="border-t border-white/10 px-5 py-3">{footer}</div> : null}
       </Dialog.Content>
     </Dialog.Portal>
   );

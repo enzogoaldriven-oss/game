@@ -1,6 +1,6 @@
 import { connection } from "next/server";
 import { CORS_HEADERS, json } from "@/lib/http";
-import { subscribe } from "@/lib/store";
+import { subscribe } from "@/lib/live";
 import { viewerFromRequest } from "@/lib/view-auth";
 
 export async function GET(request: Request) {
@@ -23,8 +23,16 @@ export async function GET(request: Request) {
       };
       send(`:${" ".repeat(2048)}\n\n`);
       send(`retry: 3000\n\n`);
-      unsubscribe = subscribe((event) => {
-        send(`data: ${JSON.stringify(event)}\n\n`);
+      unsubscribe = subscribe((frame) => {
+        if (frame.kind === "event") {
+          send(`data: ${JSON.stringify(frame.event)}\n\n`);
+          return;
+        }
+        if (frame.kind === "todo") {
+          send(`event: todo\ndata: ${JSON.stringify(frame)}\n\n`);
+          return;
+        }
+        send(`event: chat\ndata: ${JSON.stringify(frame.message)}\n\n`);
       });
       ping = setInterval(() => send(": ping\n\n"), 20000);
       const close = () => {

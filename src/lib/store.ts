@@ -1,58 +1,38 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import fs from "node:fs";
 import path from "node:path";
 import { resolveBot } from "@/lib/bots";
+import { publish } from "@/lib/live";
+import { readJson, writeJson } from "@/lib/persist";
 import { EVENT_TYPES, isCrewEvent, isEventType, type CrewEvent, type EventType } from "@/lib/types";
 
 const FILE = path.join(process.cwd(), "data", "events.json");
 const MAX_EVENTS = 200;
 const GLOBAL_KEY = "__crewHQStore";
 
-type Listener = (event: CrewEvent) => void;
-
 type Store = {
   events: CrewEvent[];
-  listeners: Set<Listener>;
 };
 
 function load(): CrewEvent[] {
-  try {
-    const raw = fs.readFileSync(FILE, "utf8");
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isCrewEvent).slice(-MAX_EVENTS);
-  } catch {
-    return [];
-  }
+  const parsed = readJson(FILE);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(isCrewEvent).slice(-MAX_EVENTS);
 }
 
 function persist(events: CrewEvent[]) {
-  try {
-    fs.mkdirSync(path.dirname(FILE), { recursive: true });
-    const tmp = `${FILE}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(events, null, 2));
-    fs.renameSync(tmp, FILE);
-  } catch (error) {
-    console.error("Crew HQ failed to persist events", error);
-  }
+  writeJson(FILE, events);
 }
 
 function getStore(): Store {
   const globalStore = globalThis as typeof globalThis & { [GLOBAL_KEY]?: Store };
   if (!globalStore[GLOBAL_KEY]) {
-    globalStore[GLOBAL_KEY] = { events: load(), listeners: new Set() };
+    globalStore[GLOBAL_KEY] = { events: load() };
   }
   return globalStore[GLOBAL_KEY];
 }
 
 export function listEvents(): CrewEvent[] {
   return getStore().events.slice();
-}
-
-export function subscribe(listener: Listener): () => void {
-  const store = getStore();
-  store.listeners.add(listener);
-  return () => store.listeners.delete(listener);
 }
 
 function expectedSecret(): string | null {
@@ -119,12 +99,6 @@ export function ingestEvent(body: unknown): IngestResult {
     store.events.splice(0, store.events.length - MAX_EVENTS);
   }
   persist(store.events);
-  for (const listener of store.listeners) {
-    try {
-      listener(event);
-    } catch (error) {
-      console.error("Crew HQ listener failed", error);
-    }
-  }
+  publish({ kind: "event", event });
   return { ok: true, event };
 }

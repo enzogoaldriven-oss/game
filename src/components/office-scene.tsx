@@ -1,0 +1,389 @@
+"use client";
+
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { accentFor, hueFor, profileFor, variantFor } from "@/lib/bots";
+import { TYPE_META } from "@/lib/bots";
+import {
+  BRAIN,
+  buildScene,
+  HOMES,
+  project,
+  ROOM_SIGNS,
+  WORLD_H,
+  WORLD_W,
+} from "@/lib/iso";
+import { createSim, ingest, orbScreen, stepSim, visualSignature, type Pose, type Sim } from "@/lib/sim";
+import type { ClientEvent, EventType } from "@/lib/types";
+import { BigBrain } from "@/components/big-brain";
+import { MinionSprite } from "@/components/minion-sprite";
+import { Button } from "@/components/ui/button";
+
+type DrawBot = {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  pose: Pose;
+  facing: 1 | -1;
+  carrying: boolean;
+  bulb: boolean;
+  bubble: string | null;
+  bubbleKind: EventType | null;
+  nonce: number;
+  status: string;
+};
+
+type DrawOrb = {
+  id: string;
+  sx: number;
+  sy: number;
+  color: string;
+};
+
+function initialBots(): DrawBot[] {
+  return Object.entries(HOMES).map(([id, home]) => ({
+    id,
+    name: profileFor(id)?.name ?? id,
+    x: home.desk.x,
+    y: home.desk.y,
+    pose: "idle",
+    facing: 1,
+    carrying: false,
+    bulb: false,
+    bubble: null,
+    bubbleKind: null,
+    nonce: 0,
+    status: "In the department",
+  }));
+}
+
+const STARS = Array.from({ length: 42 }, (_, index) => ({
+  left: `${(index * 67) % 100}%`,
+  top: `${(index * 41) % 100}%`,
+  size: (index % 3) + 1,
+  delay: (index % 8) * 0.35,
+}));
+
+export function OfficeScene({
+  events,
+  selectedId,
+  onSelect,
+  onFiled,
+  onStatuses,
+  notes,
+}: {
+  events: ClientEvent[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onFiled: (id: string) => void;
+  onStatuses: (statuses: Record<string, string>) => void;
+  notes: number;
+}) {
+  const eventsRef = useRef(events);
+  const onFiledRef = useRef(onFiled);
+  const onStatusesRef = useRef(onStatuses);
+  const scaleRef = useRef(1);
+  const sigRef = useRef("");
+
+  const [drawBots, setDrawBots] = useState<DrawBot[]>(initialBots);
+  const [orbs, setOrbs] = useState<DrawOrb[]>([]);
+  const [pulse, setPulse] = useState(0);
+  const [banner, setBanner] = useState<string | null>(null);
+  const [vp, setVp] = useState({ w: 1100, h: 720 });
+  const brain = project(BRAIN.x, BRAIN.y);
+  const [focus, setFocus] = useState({ x: brain.sx, y: brain.sy - 20 });
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const brainWrapRef = useRef<HTMLDivElement>(null);
+
+  const visitorIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const event of events) {
+      if (!HOMES[event.bot] && !ids.includes(event.bot)) ids.push(event.bot);
+    }
+    return ids;
+  }, [events]);
+
+  const scene = useMemo(() => buildScene(visitorIds.map((id) => hueFor(id))), [visitorIds]);
+
+  const fit = Math.min(vp.w / WORLD_W, vp.h / WORLD_H);
+  const zoomed = fit < 0.5;
+  const scale = Math.min(Math.max(zoomed ? 0.6 : fit * 0.98, 0.32), 1.2);
+  const inverse = 1 / scale;
+  useLayoutEffect(() => {
+    eventsRef.current = events;
+    onFiledRef.current = onFiled;
+    onStatusesRef.current = onStatuses;
+    scaleRef.current = scale;
+  }, [events, onFiled, onStatuses, scale]);
+  const cameraX = zoomed ? vp.w / 2 - focus.x * scale : (vp.w - WORLD_W * scale) / 2;
+  const cameraY = zoomed ? vp.h / 2 - focus.y * scale : (vp.h - WORLD_H * scale) / 2;
+
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node) return;
+    const measure = () => {
+      const rect = node.getBoundingClientRect();
+      setVp({ w: Math.max(1, rect.width), h: Math.max(1, rect.height) });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!banner) return;
+    const timer = window.setTimeout(() => setBanner(null), 2800);
+    return () => window.clearTimeout(timer);
+  }, [banner]);
+
+  useEffect(() => {
+    const sim: Sim = createSim();
+    let frame = 0;
+    const loop = (now: number) => {
+      ingest(sim, eventsRef.current);
+      stepSim(sim, now);
+      const bots = sim.bots.map((bot) => ({
+        id: bot.id,
+        name: profileFor(bot.id)?.name ?? eventsRef.current.find((event) => event.bot === bot.id)?.botName ?? "Visitor",
+        x: bot.x,
+        y: bot.y,
+        pose: bot.pose,
+        facing: bot.facing,
+        carrying: bot.carrying,
+        bulb: bot.bulb,
+        bubble: bot.bubble,
+        bubbleKind: bot.bubbleKind,
+        nonce: bot.nonce,
+        status: bot.status,
+      }));
+      const nextOrbs = sim.orbs.map((orb) => {
+        const point = orbScreen(orb);
+        return { id: orb.id, sx: point.sx, sy: point.sy, color: orb.color };
+      });
+      setDrawBots(bots);
+      setOrbs(nextOrbs);
+      const signature = visualSignature(sim);
+      if (signature !== sigRef.current) {
+        sigRef.current = signature;
+        onStatusesRef.current(Object.fromEntries(sim.bots.map((bot) => [bot.id, bot.status])));
+      }
+      if (sim.filed.length > 0) {
+        const batch = sim.filed.slice();
+        setPulse((value) => value + batch.length);
+        setBanner(batch[batch.length - 1]?.text ?? null);
+        for (const item of batch) onFiledRef.current(item.id);
+        const node = brainWrapRef.current;
+        if (node) {
+          node.classList.remove("is-pulsing");
+          void node.offsetWidth;
+          node.classList.add("is-pulsing");
+        }
+      }
+      frame = window.requestAnimationFrame(loop);
+    };
+    frame = window.requestAnimationFrame(loop);
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  function panTo(x: number, y: number) {
+    const point = project(x, y);
+    setFocus({ x: point.sx, y: point.sy });
+  }
+
+  function onPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (!zoomed) return;
+    if ((event.target as HTMLElement).closest("button")) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const origin = focus;
+    const move = (pointer: PointerEvent) => {
+      const dx = pointer.clientX - startX;
+      const dy = pointer.clientY - startY;
+      setFocus({
+        x: clamp(origin.x - dx / scaleRef.current, 80, WORLD_W - 80),
+        y: clamp(origin.y - dy / scaleRef.current, 80, WORLD_H - 80),
+      });
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  const directory = [
+    ...Object.keys(HOMES).map((id) => ({ id, label: profileFor(id)?.short ?? id })),
+    ...visitorIds.map((id) => ({
+      id,
+      label: events.find((event) => event.bot === id)?.botName ?? "Visitor",
+    })),
+  ];
+
+  return (
+    <div
+      ref={viewportRef}
+      className="relative h-full min-h-0 overflow-hidden"
+      style={{ touchAction: zoomed ? "none" : "auto" }}
+      onPointerDown={onPointerDown}
+    >
+      <div className="pointer-events-none absolute inset-0">
+        {STARS.map((star) => (
+          <span
+            key={`${star.left}-${star.top}`}
+            className="star"
+            style={{ left: star.left, top: star.top, width: star.size, height: star.size, animationDelay: `${star.delay}s` }}
+          />
+        ))}
+      </div>
+      <div
+        className="absolute left-0 top-0"
+        style={{
+          width: WORLD_W,
+          height: WORLD_H,
+          transform: `translate(${cameraX}px, ${cameraY}px) scale(${scale})`,
+          transformOrigin: "0 0",
+        }}
+      >
+        <svg width={WORLD_W} height={WORLD_H} className="absolute inset-0" aria-hidden>
+          <ellipse cx={brain.sx} cy={brain.sy + 10} rx="460" ry="180" fill="rgba(0,0,0,0.28)" />
+          {scene.polys.map((poly, index) => (
+            <polygon
+              key={`${poly.kind}-${index}`}
+              points={poly.points}
+              fill={poly.fill}
+              stroke={poly.kind === "floor" ? "rgba(255,255,255,0.16)" : "rgba(0,0,0,0.16)"}
+              strokeWidth={1}
+            />
+          ))}
+          {scene.lines.map((line, index) => (
+            <polyline key={index} points={line.points} fill="none" stroke={line.stroke} strokeWidth={line.width} />
+          ))}
+          {scene.dots.map((dot, index) => (
+            <circle key={index} cx={dot.cx} cy={dot.cy} r={dot.r} fill={dot.fill} />
+          ))}
+        </svg>
+        {ROOM_SIGNS.map((sign) => {
+          const point = project(sign.at.x, sign.at.y);
+          return (
+            <div
+              key={sign.title}
+              className="room-sign"
+              style={{
+                left: point.sx,
+                top: point.sy,
+                borderColor: sign.tone,
+                transform: `translate(-50%, calc(-100% - 28px)) scale(${inverse})`,
+              }}
+            >
+              <strong>{sign.title}</strong>
+            </div>
+          );
+        })}
+        <div ref={brainWrapRef} className="absolute left-0 top-0 z-[1100]" style={{ transform: `translate(${brain.sx}px, ${brain.sy}px)` }}>
+          <BigBrain pulse={pulse} />
+          <div className="brain-count" style={{ transform: `translate(-50%, 6px) scale(${inverse})` }}>
+            {notes} {notes === 1 ? "note" : "notes"} filed
+          </div>
+          {banner ? (
+            <div className="brain-banner" style={{ transform: `translate(-50%, -268px) scale(${inverse})` }}>
+              {banner}
+            </div>
+          ) : null}
+        </div>
+        {orbs.map((orb) => (
+          <div
+            key={orb.id}
+            className="fly-orb"
+            style={{
+              left: orb.sx,
+              top: orb.sy,
+              background: orb.color,
+              color: orb.color,
+              transform: `translate(-50%, -50%) scale(${inverse})`,
+              zIndex: 1600,
+            }}
+          />
+        ))}
+        {drawBots.map((bot) => {
+          const point = project(bot.x, bot.y);
+          const bubbleTone = bot.bubbleKind ? TYPE_META[bot.bubbleKind].bubble : "";
+          return (
+            <div
+              key={bot.id}
+              data-bot={bot.id}
+              data-selected={selectedId === bot.id ? "1" : "0"}
+              className="actor"
+              style={{ transform: `translate(${point.sx}px, ${point.sy}px)`, zIndex: 1200 + Math.round((bot.x + bot.y) * 20) }}
+            >
+              <button type="button" className="char-btn" onClick={() => onSelect(bot.id)} aria-label={`${bot.name}. ${bot.status}`}>
+                <span className="nameplate" style={{ transform: `translate(-50%, 8px) scale(${inverse})` }}>
+                  {bot.name}
+                </span>
+                <span key={bot.nonce} className={`bob pose-${bot.pose}`}>
+                  {bot.bubble ? (
+                    <span className={`bubble ${bubbleTone}`} style={{ transform: `translate(-50%, 0) scale(${inverse})` }}>
+                      {bot.bubble}
+                    </span>
+                  ) : null}
+                  {bot.bulb ? (
+                    <span className="bulb" style={{ transform: `translate(-50%, 0) scale(${inverse})` }} aria-hidden>
+                      💡
+                    </span>
+                  ) : null}
+                  <span className={bot.facing < 0 ? "block -scale-x-100" : "block"}>
+                    <MinionSprite variant={variantFor(bot.id)} hue={hueFor(bot.id)} badge={bot.name} />
+                  </span>
+                  {bot.carrying ? (
+                    <span
+                      className="carry-orb"
+                      style={{
+                        background: accentFor(bot.id),
+                        color: accentFor(bot.id),
+                        transform: `translate(-50%, 0) scale(${inverse})`,
+                      }}
+                    />
+                  ) : null}
+                </span>
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <div className="pointer-events-none absolute inset-x-0 top-3 z-30 flex justify-center px-3 lg:top-auto lg:bottom-3">
+        <div className="pointer-events-auto flex max-w-full flex-wrap justify-center gap-2">
+          {directory.map((entry) => (
+            <Button
+              key={entry.id}
+              type="button"
+              size="sm"
+              variant={selectedId === entry.id ? "default" : "outline"}
+              onClick={() => {
+                onSelect(entry.id);
+                if (zoomed) {
+                  const home = HOMES[entry.id];
+                  if (home) panTo(home.desk.x, home.desk.y);
+                  else panTo(BRAIN.x, BRAIN.y);
+                }
+              }}
+            >
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: accentFor(entry.id) }} />
+              {entry.label}
+            </Button>
+          ))}
+          {zoomed ? (
+            <Button type="button" size="sm" variant="ghost" onClick={() => panTo(BRAIN.x, BRAIN.y)}>
+              Big Brain
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}

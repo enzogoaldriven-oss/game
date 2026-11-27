@@ -1,0 +1,25 @@
+# The Crew HQ as one long-running Node service on Render's free plan.
+#
+# Free web services cannot mount a persistent disk. Check-ins live in memory and
+# in data/events.json on the instance filesystem, which is wiped on restart or
+# redeploy. The instance also sleeps when idle, which drops open live streams
+# until the next request wakes it. The viewer password still locks the page.
+#
+# To keep the log across deploys later, switch plan to 0.5c-512mb and add:
+#   disk:
+#     name: crew-hq-data
+#     mountPath: /app/data
+#     sizeGB: 1
+
+services:
+  - type: web
+    name: crew-hq
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: CREW_HQ_SECRET
+        sync: false
+      - key: CREW_HQ_VIEW_PASSWORD
+        sync: false

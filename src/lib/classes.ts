@@ -36,6 +36,8 @@ export const CLASSES: ClassInfo[] = [
       "history and government",
       "history and gov",
       "gov history",
+      "history/gov",
+      "history / gov",
       "mr prendagas",
     ],
   },

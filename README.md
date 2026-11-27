@@ -199,6 +199,21 @@ curl -X POST http://localhost:3847/api/chat/reply \
 - `201` `{ "message": { ... }, "original": { ... } }` for a reply
 - `200` `{ "messages": [ ... ] }` for list and pending
 
+## Grades on the wall
+
+Each classroom has a grade plaque beside its whiteboard: letter, percent, as-of date, and a progress ring. A green through red color follows A, B, C, D, and F. When a bot updates a grade, the number counts up and the activity log records a line such as `Psychology 37% → 41%`.
+
+```bash
+curl -H "x-crew-secret: dev-crew-secret" http://localhost:3847/api/grades
+
+curl -X PUT http://localhost:3847/api/grades/ms-boone \
+  -H "Content-Type: application/json" \
+  -H "x-crew-secret: dev-crew-secret" \
+  -d '{"class":"Psychology","percent":41,"letter":"F","asOf":"2026-11-27"}'
+```
+
+`GET /api/grades` accepts the viewer cookie or `x-crew-secret`. `PUT` needs the secret. If `data/grades.json` is missing, the app copies `data/seed-grades.json`. After **Ask the bots to check now**, the plaques shimmer “Updating grades…” until a grade changes or two minutes pass.
+
 ## Check now
 
 **Ask the bots to check now** in the header wakes the crew. The viewer cookie or `x-crew-secret` can call it. A global cooldown of 5 minutes is saved in `data/check-now.json`. During the cooldown the button stays disabled and the header counts down.

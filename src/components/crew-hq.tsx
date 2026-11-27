@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { canonicalBotId, DEMO_SCRIPT, profileFor, resolveBot } from "@/lib/bots";
 import { CLASSES } from "@/lib/classes";
+import type { ClassGrade } from "@/lib/grade-format";
 import { EVERYONE_ID, type ChatMessage, type ClientEvent, type CrewEvent, type GradeTodo, type TodoStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +34,21 @@ async function fetchTodos(): Promise<GradeTodo[]> {
   if (!response.ok) throw new Error("grades unavailable");
   const data = (await response.json()) as { todos?: GradeTodo[] };
   return data.todos ?? [];
+}
+
+async function fetchGrades(): Promise<ClassGrade[]> {
+  const response = await fetch("/api/grades", { cache: "no-store" });
+  if (response.status === 401) throw new LoginRequired();
+  if (!response.ok) throw new Error("grades unavailable");
+  const data = (await response.json()) as { grades?: ClassGrade[] };
+  return data.grades ?? [];
+}
+
+function gradeSignature(grades: ClassGrade[]) {
+  return grades
+    .map((grade) => `${grade.bot}:${grade.percent}:${grade.letter}:${grade.asOf}`)
+    .sort()
+    .join("|");
 }
 
 async function fetchChat(): Promise<ChatMessage[]> {
@@ -121,6 +137,8 @@ export function CrewHQ() {
   const [clock, setClock] = useState(() => Date.now());
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
+  const [grades, setGrades] = useState<ClassGrade[]>([]);
+  const [gradeWatch, setGradeWatch] = useState<{ until: number; signature: string } | null>(null);
 
   const mergeServer = useCallback((incoming: CrewEvent[]) => {
     setEvents((current) => {
@@ -178,6 +196,25 @@ export function CrewHQ() {
     const timer = window.setInterval(() => setClock(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const pull = () => {
+      void fetchGrades()
+        .then((incoming) => {
+          if (!cancelled) setGrades(incoming);
+        })
+        .catch((reason) => {
+          if (reason instanceof LoginRequired) router.refresh();
+        });
+    };
+    pull();
+    const timer = window.setInterval(pull, 10_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -416,6 +453,11 @@ export function CrewHQ() {
     }
   }
 
+  const gradesUpdating = Boolean(gradeWatch && clock < gradeWatch.until && gradeSignature(grades) === gradeWatch.signature);
+  const boardGrade = boardSubject
+    ? (grades.find((grade) => grade.bot === boardSubject.botId || grade.classId === boardSubject.id) ?? null)
+    : null;
+
   const secondsLeft = secondsUntil(check?.nextAllowedAt ?? null, clock);
   const lastMinutes = check?.lastCheckAt ? minutesAgo(check.lastCheckAt, clock) : null;
 
@@ -450,6 +492,12 @@ export function CrewHQ() {
         secondsLeft: data.secondsLeft,
         lastResult: data.lastResult,
       });
+      setGradeWatch({ until: Date.now() + 120_000, signature: gradeSignature(grades) });
+      void fetchGrades()
+        .then(setGrades)
+        .catch((reason) => {
+          if (reason instanceof LoginRequired) router.refresh();
+        });
     } catch {
       setCheckError("Couldn't ask the bots to check.");
     } finally {
@@ -536,6 +584,8 @@ export function CrewHQ() {
             notes={notes}
             replyBubbles={replyBubbles}
             todos={todos}
+            grades={grades}
+            gradesUpdating={gradesUpdating}
           />
         </main>
         <aside
@@ -573,6 +623,8 @@ export function CrewHQ() {
       <WhiteboardZoom
         subject={boardSubject}
         todos={todos}
+        grade={boardGrade}
+        gradesUpdating={gradesUpdating}
         busyId={busyTodo}
         error={todoError}
         onClose={() => setBoardId(null)}

@@ -1,0 +1,30 @@
+[
+  {
+    "bot": "ms-boone",
+    "class": "Psychology",
+    "percent": 37.0,
+    "letter": "F",
+    "asOf": "2026-11-26"
+  },
+  {
+    "bot": "ms-bhon",
+    "class": "Ethnic Studies",
+    "percent": 69.4,
+    "letter": "D+",
+    "asOf": "2026-11-26"
+  },
+  {
+    "bot": "mr-prendagas",
+    "class": "History/Gov",
+    "percent": 53.2,
+    "letter": "F",
+    "asOf": "2026-11-26"
+  },
+  {
+    "bot": "coach-bates",
+    "class": "PE",
+    "percent": 36.6,
+    "letter": "F",
+    "asOf": "2026-11-26"
+  }
+]

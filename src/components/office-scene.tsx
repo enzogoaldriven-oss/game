@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { GradePlaque } from "@/components/grade-plaque";
 import { FloorWhiteboard } from "@/components/room-whiteboard";
 import { accentFor, hueFor, profileFor, TYPE_META, variantFor } from "@/lib/bots";
 import { CLASSES, todoMatchesClass } from "@/lib/classes";
@@ -15,6 +16,7 @@ import {
   WORLD_W,
 } from "@/lib/iso";
 import { createSim, ingest, linkGeometry, stepSim, visualSignature, type NeuralLink, type Pose, type Sim } from "@/lib/sim";
+import type { ClassGrade } from "@/lib/grade-format";
 import type { ClientEvent, EventType, GradeTodo } from "@/lib/types";
 import { BigBrain } from "@/components/big-brain";
 import { MinionSprite } from "@/components/minion-sprite";
@@ -72,6 +74,8 @@ export function OfficeScene({
   notes,
   replyBubbles,
   todos,
+  grades,
+  gradesUpdating,
 }: {
   events: ClientEvent[];
   selectedId: string | null;
@@ -83,6 +87,8 @@ export function OfficeScene({
   notes: number;
   replyBubbles: Record<string, ReplyBubble | undefined>;
   todos: GradeTodo[];
+  grades: ClassGrade[];
+  gradesUpdating: boolean;
 }) {
   const eventsRef = useRef(events);
   const onFiledRef = useRef(onFiled);
@@ -296,6 +302,12 @@ export function OfficeScene({
               }}
             />
           );
+        })}
+        {WHITEBOARDS.map((spec) => {
+          const subject = CLASSES.find((item) => item.id === spec.classId);
+          if (!subject) return null;
+          const grade = grades.find((item) => item.bot === subject.botId || item.classId === subject.id) ?? null;
+          return <GradePlaque key={`grade-${spec.classId}`} spec={spec} grade={grade} updating={gradesUpdating} />;
         })}
         {ROOM_SIGNS.map((sign) => {
           const point = project(sign.at.x, sign.at.y);

@@ -3,6 +3,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { formatDue, sortTodos } from "@/components/grade-dashboard";
+import { formatPercent, letterTone, type ClassGrade } from "@/lib/grade-format";
 import { todoMatchesClass, type ClassInfo } from "@/lib/classes";
 import type { GradeTodo, TodoStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -10,6 +11,8 @@ import { cn } from "@/lib/utils";
 export function WhiteboardZoom({
   subject,
   todos,
+  grade,
+  gradesUpdating,
   busyId,
   error,
   onClose,
@@ -18,6 +21,8 @@ export function WhiteboardZoom({
 }: {
   subject: ClassInfo | null;
   todos: GradeTodo[];
+  grade: ClassGrade | null;
+  gradesUpdating: boolean;
   busyId: string | null;
   error: string | null;
   onClose: () => void;
@@ -37,8 +42,16 @@ export function WhiteboardZoom({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <Dialog.Title className="font-marker text-4xl leading-none text-slate-800">{subject.name}</Dialog.Title>
-                  <Dialog.Description className="font-marker mt-1 text-xl text-slate-600">
-                    {subject.teacher} · {openCount} open
+                  <Dialog.Description className="font-marker mt-1 flex flex-wrap items-center gap-2 text-xl text-slate-600">
+                    <span>
+                      {subject.teacher} · {openCount} open
+                    </span>
+                    {grade ? (
+                      <span className={cn("grade-chip", `grade-${letterTone(grade.letter)}`)}>
+                        {grade.letter} {formatPercent(grade.percent)}%
+                      </span>
+                    ) : null}
+                    {gradesUpdating ? <span className="text-sm font-bold text-slate-500">Updating grades…</span> : null}
                   </Dialog.Description>
                 </div>
                 <Dialog.Close className="grid h-11 w-11 place-items-center rounded-full bg-slate-800/10 text-slate-800" aria-label="Close whiteboard">

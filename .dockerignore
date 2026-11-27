@@ -3,5 +3,6 @@ node_modules
 .git
 data/*
 !data/seed-todos.json
+!data/seed-grades.json
 *.md
 npm-debug.log*

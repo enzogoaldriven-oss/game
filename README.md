@@ -199,6 +199,19 @@ curl -X POST http://localhost:3847/api/chat/reply \
 - `201` `{ "message": { ... }, "original": { ... } }` for a reply
 - `200` `{ "messages": [ ... ] }` for list and pending
 
+## Check now
+
+**Ask the bots to check now** in the header wakes the crew. The viewer cookie or `x-crew-secret` can call it. A global cooldown of 5 minutes is saved in `data/check-now.json`. During the cooldown the button stays disabled and the header counts down.
+
+```bash
+curl -b /tmp/crew-cookies -X POST http://localhost:3847/api/check-now
+curl -b /tmp/crew-cookies http://localhost:3847/api/check-now/status
+```
+
+`POST` returns `429` and `secondsLeft` when it is too soon. A successful call signs the JSON body with `CREW_HQ_SECRET` and posts it to `CREW_HQ_WAKE_URL` (there is a built-in default). The activity log records `Check requested` plus the webhook status. The secret is not written there.
+
+`GET /api/check-now/status` returns `{ lastCheckAt, nextAllowedAt, secondsLeft, lastResult }`.
+
 ## Deploy
 
 This app expects one long-running Node process so the event list, grade items, chat, and the SSE fan-out stay in memory together. `data/events.json`, `data/todos.json`, and `data/chat.json` are the copies on disk. None of them are seeded with personal assignments or messages.

@@ -41,6 +41,10 @@ function expectedSecret(): string | null {
   return null;
 }
 
+export function crewSecret(): string | null {
+  return expectedSecret();
+}
+
 export function readProvidedSecret(request: Request): string | null {
   const header = request.headers.get("x-crew-secret");
   if (header) return header.trim();

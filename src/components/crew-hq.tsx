@@ -43,6 +43,39 @@ async function fetchChat(): Promise<ChatMessage[]> {
   return data.messages ?? [];
 }
 
+type CheckStatus = {
+  lastCheckAt: string | null;
+  nextAllowedAt: string | null;
+  secondsLeft: number;
+  lastResult: string | null;
+};
+
+async function fetchCheckStatus(): Promise<CheckStatus> {
+  const response = await fetch("/api/check-now/status", { cache: "no-store" });
+  if (response.status === 401) throw new LoginRequired();
+  if (!response.ok) throw new Error("check status unavailable");
+  return (await response.json()) as CheckStatus;
+}
+
+function secondsUntil(iso: string | null, now: number) {
+  if (!iso) return 0;
+  const target = Date.parse(iso);
+  if (!Number.isFinite(target) || target <= now) return 0;
+  return Math.ceil((target - now) / 1000);
+}
+
+function formatCountdown(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes}:${rest.toString().padStart(2, "0")}`;
+}
+
+function minutesAgo(iso: string, now: number) {
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return 0;
+  return Math.max(0, Math.floor((now - then) / 60_000));
+}
+
 function upsertTodo(list: GradeTodo[], todo: GradeTodo) {
   const index = list.findIndex((item) => item.id === todo.id);
   if (index < 0) return [...list, todo];
@@ -84,6 +117,10 @@ export function CrewHQ() {
   const [busyTodo, setBusyTodo] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [replyBubbles, setReplyBubbles] = useState<Record<string, ReplyBubble | undefined>>({});
+  const [check, setCheck] = useState<CheckStatus | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
+  const [checking, setChecking] = useState(false);
+  const [checkError, setCheckError] = useState<string | null>(null);
 
   const mergeServer = useCallback((incoming: CrewEvent[]) => {
     setEvents((current) => {
@@ -136,6 +173,42 @@ export function CrewHQ() {
       alive.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchCheckStatus()
+      .then((status) => {
+        if (!cancelled) setCheck(status);
+      })
+      .catch((reason) => {
+        if (reason instanceof LoginRequired) router.refresh();
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void fetchChat()
+        .then((incoming) => {
+          setMessages((current) => {
+            const map = new Map(current.map((message) => [message.id, message]));
+            for (const message of incoming) map.set(message.id, message);
+            return [...map.values()].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+          });
+        })
+        .catch((reason) => {
+          if (reason instanceof LoginRequired) router.refresh();
+        });
+    }, 10_000);
+    return () => window.clearInterval(timer);
+  }, [router]);
 
   useEffect(() => {
     let source: EventSource | null = null;
@@ -343,11 +416,53 @@ export function CrewHQ() {
     }
   }
 
+  const secondsLeft = secondsUntil(check?.nextAllowedAt ?? null, clock);
+  const lastMinutes = check?.lastCheckAt ? minutesAgo(check.lastCheckAt, clock) : null;
+
+  async function askCheck() {
+    if (checking || secondsLeft > 0) return;
+    setChecking(true);
+    setCheckError(null);
+    try {
+      const response = await fetch("/api/check-now", { method: "POST" });
+      const data = (await response.json()) as CheckStatus & { error?: string; secondsLeft?: number };
+      if (response.status === 401) {
+        router.refresh();
+        return;
+      }
+      if (response.status === 429) {
+        const left = data.secondsLeft ?? secondsLeft;
+        setCheck((current) => ({
+          lastCheckAt: data.lastCheckAt ?? current?.lastCheckAt ?? null,
+          nextAllowedAt: new Date(Date.now() + left * 1000).toISOString(),
+          secondsLeft: left,
+          lastResult: data.lastResult ?? current?.lastResult ?? null,
+        }));
+        return;
+      }
+      if (!response.ok) {
+        setCheckError("Couldn't ask the bots to check.");
+        return;
+      }
+      setCheck({
+        lastCheckAt: data.lastCheckAt,
+        nextAllowedAt: data.nextAllowedAt,
+        secondsLeft: data.secondsLeft,
+        lastResult: data.lastResult,
+      });
+    } catch {
+      setCheckError("Couldn't ask the bots to check.");
+    } finally {
+      setChecking(false);
+    }
+  }
+
   const linkCopy = link === "live" ? "Live" : link === "reconnecting" ? "Reconnecting" : "Linking";
 
   return (
     <div className="flex h-dvh flex-col bg-[#07091a] text-white">
-      <header className="z-40 flex items-center justify-between gap-3 border-b border-white/10 bg-[#101226]/90 px-3 py-2.5 backdrop-blur sm:px-5">
+      <header className="z-40 border-b border-white/10 bg-[#101226]/90 px-3 py-2.5 backdrop-blur sm:px-5">
+        <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="font-display text-xl leading-none sm:text-2xl">The Crew HQ</p>
           <p className="mt-1 truncate text-xs text-white/65 sm:text-sm">Enzo&apos;s helpers, on the floor</p>
@@ -384,6 +499,20 @@ export function CrewHQ() {
               Lock
             </Button>
           </form>
+        </div>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <Button type="button" size="sm" disabled={checking || secondsLeft > 0} onClick={() => void askCheck()}>
+            Ask the bots to check now
+          </Button>
+          {checking || secondsLeft > 0 ? <span className="text-xs font-extrabold text-cyan-100">Bots are on the way…</span> : null}
+          {secondsLeft > 0 ? (
+            <span className="text-xs font-extrabold text-white/80">Next check in {formatCountdown(secondsLeft)}</span>
+          ) : null}
+          {lastMinutes !== null ? (
+            <span className="text-xs font-bold text-white/55">Last check: {lastMinutes} min ago</span>
+          ) : null}
+          {checkError ? <span className="text-xs font-bold text-rose-200">{checkError}</span> : null}
         </div>
       </header>
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">

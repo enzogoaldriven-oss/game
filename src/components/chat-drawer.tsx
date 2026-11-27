@@ -20,6 +20,7 @@ export type ChatTarget = {
 function ChatComposer({ name, sending, onSend }: { name: string; sending: boolean; onSend: (text: string) => void }) {
   const [text, setText] = useState("");
   return (
+    <div>
     <form
       className="flex items-center gap-2"
       onSubmit={(event) => {
@@ -44,6 +45,8 @@ function ChatComposer({ name, sending, onSend }: { name: string; sending: boolea
         Send
       </Button>
     </form>
+    <p className="mt-2 text-center text-xs font-bold text-white/55">Press Check now so the bots read your message.</p>
+    </div>
   );
 }
 

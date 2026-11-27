@@ -3,7 +3,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { formatDue, sortTodos } from "@/components/grade-dashboard";
-import type { ClassInfo } from "@/lib/classes";
+import { todoMatchesClass, type ClassInfo } from "@/lib/classes";
 import type { GradeTodo, TodoStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +24,7 @@ export function WhiteboardZoom({
   onToggle: (todo: GradeTodo, status: TodoStatus) => void;
   onRetry: () => void;
 }) {
-  const items = subject ? sortTodos(todos.filter((todo) => todo.classId === subject.id)) : [];
+  const items = subject ? sortTodos(todos.filter((todo) => todoMatchesClass(todo, subject))) : [];
   const openCount = items.filter((todo) => todo.status === "todo").length;
 
   return (

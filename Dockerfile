@@ -15,5 +15,6 @@ COPY --from=build /app/.next ./.next
 COPY --from=build /app/public ./public
 COPY --from=build /app/next.config.ts ./next.config.ts
 RUN mkdir -p /app/data
+COPY --from=build /app/data/seed-todos.json /app/data/seed-todos.json
 EXPOSE 3847
 CMD ["npm", "start"]

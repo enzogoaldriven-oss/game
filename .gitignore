@@ -36,6 +36,7 @@ yarn-error.log*
 
 # runtime event log
 /data/*.json
+!/data/seed-todos.json
 /data/*.tmp
 
 # vercel

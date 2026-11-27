@@ -1,6 +1,7 @@
 node_modules
 .next
 .git
-data
+data/*
+!data/seed-todos.json
 *.md
 npm-debug.log*

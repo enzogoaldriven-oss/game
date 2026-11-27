@@ -206,7 +206,7 @@ input {
 
 .room-board {
   position: absolute;
-  z-index: 45;
+  z-index: 2600;
   border: 0;
   padding: 0;
   background: transparent;

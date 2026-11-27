@@ -13,6 +13,7 @@ import {
 } from "@/lib/types";
 
 const FILE = path.join(process.cwd(), "data", "todos.json");
+const SEED = path.join(process.cwd(), "data", "seed-todos.json");
 const MAX_TODOS = 300;
 const KEY = "__crewHQTodos";
 
@@ -50,10 +51,21 @@ function isTodo(value: unknown): value is GradeTodo {
   );
 }
 
+function loadSeed(): GradeTodo[] {
+  const parsed = readJson(SEED);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(isTodo);
+}
+
 function load(): GradeTodo[] {
   const parsed = readJson(FILE);
-  if (!Array.isArray(parsed)) return [];
-  return parsed.filter(isTodo).slice(-MAX_TODOS);
+  if (Array.isArray(parsed)) {
+    const saved = parsed.filter(isTodo);
+    if (saved.length > 0) return saved.slice(-MAX_TODOS);
+  }
+  const seeded = loadSeed();
+  if (seeded.length > 0) persist(seeded);
+  return seeded;
 }
 
 function bucket(): Bucket {
@@ -123,7 +135,7 @@ export function createTodo(body: unknown): GradeResult {
   if (typeof record.bot !== "string" || record.bot.trim().length === 0 || record.bot.trim().length > 48) {
     return fail(400, "bot must be a name up to 48 characters.");
   }
-  const subject = resolveClass(record.class);
+  const subject = resolveClass(record.class) ?? resolveClass(record.bot);
   if (!subject) return fail(400, "class must be Psychology, Ethnic Studies, Gov/History, or PE.");
   const title = cleanTitle(record.title);
   if (!title) return fail(400, "title must be 1 to 140 characters.");

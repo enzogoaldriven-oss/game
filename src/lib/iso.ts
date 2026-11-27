@@ -274,7 +274,7 @@ export type WhiteboardSpec = {
 /** Back wall of each classroom. `x` runs along +x; `y` runs along +y. */
 export const WHITEBOARDS: WhiteboardSpec[] = [
   { classId: "psychology", axis: "x", x: 6.55, y: 0.02, w: 3.15 },
-  { classId: "ethnic-studies", axis: "x", x: 1.2, y: 5.02, w: 2.7 },
+  { classId: "ethnic-studies", axis: "y", x: 0.06, y: 6.35, w: 2.9 },
   { classId: "gov-history", axis: "y", x: 15.98, y: 6.05, w: 2.55 },
   { classId: "pe", axis: "x", x: 6.7, y: 15.98, w: 3.05 },
 ];

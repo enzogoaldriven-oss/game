@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { FloorWhiteboard } from "@/components/room-whiteboard";
 import { accentFor, hueFor, profileFor, TYPE_META, variantFor } from "@/lib/bots";
-import { CLASSES } from "@/lib/classes";
+import { CLASSES, todoMatchesClass } from "@/lib/classes";
 import {
   BRAIN,
   buildScene,
@@ -286,7 +286,7 @@ export function OfficeScene({
               key={spec.classId}
               spec={spec}
               subject={subject}
-              todos={todos.filter((todo) => todo.classId === spec.classId)}
+              todos={todos.filter((todo) => todoMatchesClass(todo, subject))}
               onOpen={() => {
                 onOpenWhiteboard(spec.classId);
                 if (zoomed) {

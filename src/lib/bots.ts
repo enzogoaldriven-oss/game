@@ -31,7 +31,7 @@ export const KNOWN_BOTS: BotProfile[] = [
     department: "Ethnic Studies",
     room: "Ethnic Studies",
     variant: "bhon",
-    aliases: ["ms bhon", "msbhon", "ms bhone", "bhon"],
+    aliases: ["ms bhon", "msbhon", "ms bhone", "bhon", "ms bohn", "msbohn", "bohn"],
     blurb: "Ethnic Studies. Orange minion, denim jacket, mountain pack, timeline scroll.",
   },
   {

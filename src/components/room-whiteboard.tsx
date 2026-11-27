@@ -36,6 +36,7 @@ export function FloorWhiteboard({
         height: BOARD_H,
         transform: skew,
       }}
+      onPointerDown={(event) => event.stopPropagation()}
       onClick={onOpen}
       aria-label={`${subject.name} whiteboard, ${open.length} open. Zoom in.`}
     >

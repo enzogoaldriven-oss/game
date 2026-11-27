@@ -19,7 +19,7 @@ export const CLASSES: ClassInfo[] = [
     name: "Ethnic Studies",
     teacher: "Ms Bhon",
     botId: "ms-bhon",
-    aliases: ["ethnic studies", "ethnic-studies", "ms bhon"],
+    aliases: ["ethnic studies", "ethnic-studies", "ethnicstudies", "ms bhon", "ms bohn", "msbhon", "msbohn", "bhon"],
   },
   {
     id: "gov-history",
@@ -35,6 +35,7 @@ export const CLASSES: ClassInfo[] = [
       "history & government",
       "history and government",
       "history and gov",
+      "gov history",
       "mr prendagas",
     ],
   },
@@ -48,16 +49,32 @@ export const CLASSES: ClassInfo[] = [
 ];
 
 export function normalizeClass(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/\./g, "")
-    .replace(/\s*\/\s*/g, "/")
-    .replace(/\s+/g, " ");
+  let text = value.trim().toLowerCase().replace(/\./g, "");
+  text = text.replace(/[_-]+/g, " ");
+  text = text.replace(/\s*\/\s*/g, "/");
+  text = text.replace(/\s+/g, " ").trim();
+  while (text.startsWith("visitor ")) text = text.slice("visitor ".length).trim();
+  return text;
 }
 
 export function resolveClass(value: unknown): ClassInfo | null {
   if (typeof value !== "string" || value.trim().length === 0) return null;
   const norm = normalizeClass(value);
-  return CLASSES.find((item) => item.aliases.includes(norm)) ?? null;
+  return (
+    CLASSES.find(
+      (item) =>
+        item.aliases.includes(norm) ||
+        normalizeClass(item.name) === norm ||
+        normalizeClass(item.id) === norm ||
+        normalizeClass(item.botId) === norm,
+    ) ?? null
+  );
+}
+
+export function todoMatchesClass(
+  todo: { classId: string; className: string; bot: string },
+  subject: ClassInfo,
+): boolean {
+  if (todo.classId === subject.id || todo.bot === subject.botId) return true;
+  return resolveClass(todo.className)?.id === subject.id || resolveClass(todo.bot)?.id === subject.id;
 }

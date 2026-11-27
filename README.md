@@ -120,7 +120,7 @@ Click a character to open a chat with that bot. Click the Big Brain (or the Big 
 
 ## Grades
 
-Each classroom whiteboard shows that class's open items in marker writing, plus an open count. Click the board for a larger view and tick items there with the viewer cookie. Nothing is seeded. The header shows one small total. Bot names in chat accept spaces, hyphens, or a `visitor-` prefix, so `ms-boone` and `ms boone` are the same person. More than one bot can reply to an everyone message.
+Each classroom whiteboard shows that class's open items in marker writing, plus an open count. Click any board, including Ethnic Studies, for the same large whiteboard. The header shows one small total. If `data/todos.json` is missing after a restart, the app copies `data/seed-todos.json` (the current class list) once. Later posts are kept. Bot names in chat accept spaces, hyphens, or a `visitor-` prefix, so `ms-boone` and `ms boone` are the same person. More than one bot can reply to an everyone message.
 
 Classes: `Psychology` (Ms Boone), `Ethnic Studies` (Ms Bhon), `Gov/History` (Mr Prendagas), `PE` (Coach Bates).
 
